@@ -18,5 +18,5 @@ export function downloadCsv<T>(filename: string, rows: readonly T[], columns: re
 }
 
 export function safeFileName(s: string): string {
-  return s.replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'export';
+  return s.replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'export';
 }

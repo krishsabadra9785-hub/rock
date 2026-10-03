@@ -226,8 +226,9 @@ export async function changeDefaultRate(party: Party, rateType: RateType, newVal
       sourceOrderNumber: null,
       reason: reason.trim().slice(0, 200),
     });
-    tx.update(ref, { [`rates.${rateType}`]: newValue, ...updatedFields(uid) });
-    tx.set(doc(collection(db, COL.rateHistory)), { ...h, createdAt: serverTimestamp() });
+    const historyRef = doc(collection(db, COL.rateHistory));
+    tx.update(ref, { [`rates.${rateType}`]: newValue, lastRateChangeId: historyRef.id, ...updatedFields(uid) });
+    tx.set(historyRef, { ...h, createdAt: serverTimestamp() });
     writeAudit(tx, uid, {
       entityType: 'party',
       entityId: party.id,

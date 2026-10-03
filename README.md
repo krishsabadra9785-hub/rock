@@ -180,13 +180,28 @@ Open **http://localhost:5173/rock/** in your browser. Stop it with `Ctrl + C`.
 ## 6. Test and build
 
 ```bash
-npm run test        # automated tests, including every figure of the 38.52 MT example
+npm test            # automated tests, including every figure of the 38.52 MT example
+npm run test:rules  # security-rules tests on the Firestore emulator (needs Java 21, see below)
 npm run typecheck   # checks the code for type errors
 npm run lint        # code style checks
 npm run build       # creates the production website in the dist/ folder
 npm run preview     # serves the built site at http://localhost:4173/rock/
 npm run check       # all of the above in one go
 ```
+
+### Security-rules tests (recommended before publishing rules)
+
+These run the real `firestore.rules` against Google's local Firestore emulator. That needs no Firebase project and no billing, but it does need **Java 21**:
+
+```bash
+# Mac (with Homebrew: https://brew.sh)
+brew install openjdk@21
+echo 'export PATH="/opt/homebrew/opt/openjdk@21/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+java -version
+npm run test:rules
+```
+
+GitHub Actions also runs them on every push. The website is only published if both the app tests and the rules tests pass.
 
 ## 7. Publish on GitHub Pages
 
@@ -250,6 +265,7 @@ The first time you sign in, ROCK shows "Your account isn't set up in ROCK yet" w
 | `role` | string | `ADMIN` |
 | `active` | boolean | `true` |
 
+   Add **only** these four fields. The security rules reject profile documents with extra fields when an administrator edits them later.
 5. Save, go back to ROCK, sign in again with Login ID `owner` and your password, and create your 4-digit PIN.
 
 Then, inside ROCK:
@@ -330,7 +346,8 @@ Open **Actions → the failed run → the red step** and read the last lines.
 |---|---|---|
 | **Check Firebase configuration variables** | A repository variable is missing | Add it (step 7.2), then **Actions → the run → Re-run all jobs** |
 | **Install dependencies** says `npm ci` can only install with an existing lock file / lock file out of sync | `package-lock.json` doesn't match `package.json` | On your computer run `npm install`, commit the updated `package-lock.json`, push |
-| **Type check** or **Tests** | A code change broke something | Run `npm run check` locally, fix what it reports, push again |
+| **Type check**, **Lint** or **Tests** | A code change broke something | Run `npm run check` locally, fix what it reports, push again |
+| **Firestore security rules tests** (job "rules") | A rules test failed, or the emulator couldn't start | Run `npm run test:rules` locally (needs Java 21) and read which test failed |
 | **Deploy to GitHub Pages**: "Get Pages site failed" / "Not Found" | Pages source isn't set to GitHub Actions | Step 7.1, then re-run |
 | **Deploy**: "Branch is not allowed to deploy to github-pages" | Environment protection rule | Settings → Environments → github-pages → Deployment branches → allow `main` |
 
@@ -373,7 +390,7 @@ You can always create orders manually.
 
 ### Figures on the dashboard look wrong
 
-**Settings → Data → Rebuild statistics** recalculates all summaries from the original orders and payments.
+**Settings → Data → Check figures** recalculates every total from the original orders and active payments and reports any difference without changing anything. **Rebuild statistics** then repairs dashboard summaries. Running *Check figures* once a month is a good habit.
 
 ## 15. Project structure
 

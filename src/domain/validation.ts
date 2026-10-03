@@ -54,7 +54,7 @@ export function validateAmount(input: string): FieldResult<Paise> {
 export function validatePhone(input: string, required = false): FieldResult<string> {
   const trimmed = input.trim();
   if (!trimmed) return required ? fail('Enter a phone number') : ok('');
-  const digits = trimmed.replace(/[\s\-()]/g, '');
+  const digits = trimmed.replace(/[\s()-]/g, '');
   if (!/^\+?\d{6,15}$/.test(digits)) return fail('Use digits only, e.g. 9876543210');
   const national = digits.replace(/^\+?91(?=\d{10}$)/, '');
   if (/^\d{10}$/.test(national) && !/^[6-9]/.test(national) && !/^0/.test(national)) {

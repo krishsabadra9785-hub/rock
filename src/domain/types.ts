@@ -180,6 +180,10 @@ export interface Order {
   transporterId: string | null;
   paymentAgentId: string | null;
   paid: PaidMap;
+  /** Payment whose creation/void last moved `paid` (required by the security rules). */
+  lastPaymentId: string | null;
+  /** Counter document that allocated the order number, e.g. "orders-2026". */
+  counterId: string | null;
   rateDecisions: RateDecisionRecord[];
   searchTokens: string[];
   notes: string;

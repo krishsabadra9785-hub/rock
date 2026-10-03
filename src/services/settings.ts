@@ -33,7 +33,7 @@ export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
   if (patch.fyStartMonth !== undefined && (patch.fyStartMonth < 1 || patch.fyStartMonth > 12)) {
     throw new AppError('Financial year must start in month 1–12');
   }
-  if (patch.aiModel !== undefined && !/^[a-z0-9.\-]{3,60}$/.test(patch.aiModel)) {
+  if (patch.aiModel !== undefined && !/^[a-z0-9.-]{3,60}$/.test(patch.aiModel)) {
     throw new AppError('Model name can contain lowercase letters, numbers, dots and dashes');
   }
   const clean: Record<string, unknown> = { ...patch };

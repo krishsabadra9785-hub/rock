@@ -12,7 +12,7 @@ import { changePassword, emailToLoginId } from '../../services/auth';
 import { exportAllData } from '../../services/backup';
 import { seedDemoData } from '../../services/demo';
 import { friendlyError } from '../../services/errors';
-import { rebuildRollups } from '../../services/rollups';
+import { checkIntegrity, rebuildRollups } from '../../services/rollups';
 import { saveSettings } from '../../services/settings';
 import { listUsers, updateOwnDisplayName, upsertUser } from '../../services/users';
 import { receiptStorage } from '../../services/receiptStorage';
@@ -250,6 +250,25 @@ function DataTab() {
       <Panel title="Backup">
         <p className="muted" style={{ marginBottom: 12 }}>Downloads every business record (parties, orders, payments, rate history, settings) as a JSON file. Keep it somewhere safe; it contains confidential data.</p>
         <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`rock-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
+      </Panel>
+      <Panel title="Check figures">
+        <p className="muted" style={{ marginBottom: 12 }}>Recomputes every total from the original orders and active payments and compares it with what is stored. Changes nothing.</p>
+        <Button
+          icon="check"
+          busy={busy === 'check'}
+          onClick={() =>
+            void run('check', async () => {
+              const r = await checkIntegrity(setProgress);
+              setProgress(
+                r.paidMismatches.length === 0 && r.rollupMismatches.length === 0
+                  ? `All figures match: ${r.orders} orders, ${r.payments} payments checked.`
+                  : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents. Rebuild statistics fixes dashboard figures; contact support for order paid totals.`,
+              );
+            })
+          }
+        >
+          Check figures
+        </Button>
       </Panel>
       <Panel title="Rebuild statistics">
         <p className="muted" style={{ marginBottom: 12 }}>Dashboards use summary documents kept up to date with every order and payment. If figures ever look wrong, rebuild them from the original records. This reads every order and payment once.</p>

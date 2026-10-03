@@ -77,6 +77,7 @@ export function PaymentFormDialog({
   const save = async () => {
     if (busy) return;
     if (!amt.ok) return setError(amt.error);
+    if (over) return setError('This is more than the outstanding amount on this order. Record any extra as an on-account payment instead.');
     if (meta.partyType && !partyId) return setError('Select who this payment is for');
     setBusy(true);
     setError(null);
@@ -168,7 +169,7 @@ export function PaymentFormDialog({
         )}
         {over && (
           <div className="span-2">
-            <Notice tone="warn">This is more than the outstanding amount. It will show as overpaid.</Notice>
+            <Notice tone="danger">This is more than the outstanding amount, so it can't be recorded against this order.</Notice>
           </div>
         )}
         {error && (

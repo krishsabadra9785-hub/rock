@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { PartySelect } from '../../components/PartySelect';
 import { AmountInput, Button, Field, Modal, Notice, TextArea, TextInput } from '../../components/ui';
-import { parsePercent, parseRupees } from '../../domain/money';
+import { bpToInput, parsePercent, parseRupees } from '../../domain/money';
 import { RATE_META, RATE_TYPES_BY_PARTY } from '../../domain/rates';
 import type { Party, PartyRates, PartyType, RateType } from '../../domain/types';
 import { friendlyError } from '../../services/errors';
 import { createParty, PARTY_LABELS, updateParty } from '../../services/parties';
 import { useSession } from '../../state/SessionProvider';
 import { useToast } from '../../state/ToastProvider';
-import { bpToInput } from '../../domain/money';
 
 export function PartyFormDialog({ type, party, onClose, onSaved }: { type: PartyType; party?: Party; onClose: () => void; onSaved?: (id: string) => void }) {
   const toast = useToast();

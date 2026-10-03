@@ -392,3 +392,14 @@ export function combineDeltas(deltas: readonly RollupDelta[]): Map<string, Rollu
   }
   return byKey;
 }
+
+/** Differences between stored and recomputed statistics (dotted path → [stored, computed]). */
+export function diffRollups(stored: RollupData, computed: RollupData): Record<string, [number, number]> {
+  const a = flattenDelta(stored);
+  const b = flattenDelta(computed);
+  const out: Record<string, [number, number]> = {};
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if ((a[k] ?? 0) !== (b[k] ?? 0)) out[k] = [a[k] ?? 0, b[k] ?? 0];
+  }
+  return out;
+}

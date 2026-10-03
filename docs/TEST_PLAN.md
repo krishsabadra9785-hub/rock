@@ -15,9 +15,12 @@ Run on every push by GitHub Actions; deployment is blocked if any fail.
 | `tests/validation.test.ts` | Quantity, rates, GST, phones, dates, GSTIN, receipt files, login ID, PIN rules, passwords |
 | `tests/extraction.test.ts` | AI output never trusted: kg→MT conversion, suspicious values, low confidence, wrong types, DD/MM dates, malformed JSON |
 | `tests/misc.test.ts` | Order numbering, CSV escaping and formula-injection guard, search tokens, role permissions |
+| `tests/paymentIntegrity.test.ts` | Negative/zero/fractional/NaN/Infinity amounts rejected; payment ↔ order party consistency for all five categories; overpayment rejected; multiple part payments; void reversal never negative; PA settlement capped at ₹4,67,055; corrections can't go below paid; reconciliation of paid totals vs ACTIVE payments; PA rate snapshot unaffected by later default change; role matrix |
+| `tests/rulesMirror.test.ts` | Proves app amounts always satisfy the rules' integer formula (5,000 random orders) and tampered ±1 paisa never does; 64-bit bounds; statistics diff detection |
+| `tests/rules/rules.test.ts` (emulator, `npm run test:rules`) | The real `firestore.rules`: access control, role escalation, PIN-hash privacy, order amount validation (GST, PA deduction/balance, seller), party type/name checks, counter-allocated numbers, no image content, no deletes, cancelled orders final, payment↔paid coupling, wrong party, overpayment, negative/zero/fractional amounts, double counting, void once, immutable payments, rate history genuine + append-only, master rate change leaves orders unchanged, statistics paid totals protected from OPERATIONS, audit log append-only |
 | `tests/architecture.test.ts` | Zero-cost guard rails: no Firebase Storage/Functions/Vertex imports, no hosting/storage in `firebase.json`, `/rock/` base path, HashRouter, Pages workflow, receipt provider stores nothing, no open rules, no private keys |
 
-**Rules testing:** use Firebase console → Firestore → Rules → **Rules Playground** for the security scenarios in §3, or the Emulator Suite (`npm run emulators`, set `VITE_USE_EMULATORS=true`).
+**Rules testing:** `npm run test:rules` runs the emulator suite automatically (also in GitHub Actions). For ad-hoc checks use Firebase console → Firestore → Rules → **Rules Playground**.
 
 ## 2. End-to-end acceptance (manual, on the live site)
 

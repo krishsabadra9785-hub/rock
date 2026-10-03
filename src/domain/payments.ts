@@ -1,5 +1,6 @@
+import { MAX_PAYMENT_PAISE } from './validation';
 import type { Paise } from './money';
-import type { Order, PaidKey, PaidMap, PartyType, PaymentCategory, PaymentMethod, SettlementStatus } from './types';
+import type { Order, PaidKey, PaidMap, PartyType, Payment, PaymentCategory, PaymentMethod, SettlementStatus } from './types';
 
 export interface CategoryMeta {
   label: string;
@@ -111,3 +112,118 @@ export const STATUS_LABELS: Record<SettlementStatus, string> = {
   OVERPAID: 'Overpaid',
   NOT_APPLICABLE: '—',
 };
+
+// ---------------------------------------------------------------------------
+// Payment integrity (mirrors firestore.rules; used by services and tests)
+// ---------------------------------------------------------------------------
+
+export { MAX_PAYMENT_PAISE };
+
+export class PaymentIntegrityError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentIntegrityError';
+  }
+}
+
+type OrderForPayments = Pick<
+  Order,
+  'buyer' | 'seller' | 'commission' | 'freight' | 'paymentAgent' | 'paid' | 'buyerId' | 'sellerId' | 'commissionAgentId' | 'transporterId' | 'paymentAgentId'
+>;
+
+/** Positive whole paise within limits. Rejects 0, negatives, fractions, NaN, Infinity. */
+export function assertValidPaymentAmount(amount: unknown): asserts amount is number {
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount)) throw new PaymentIntegrityError('Amount must be a whole number of paise');
+  if (amount <= 0) throw new PaymentIntegrityError('Amount must be greater than zero');
+  if (amount > MAX_PAYMENT_PAISE) throw new PaymentIntegrityError('Amount is too large');
+}
+
+/** Whether a party of `partyType` may receive/pay a payment of `category`. */
+export function categoryAcceptsPartyType(category: PaymentCategory, partyType: PartyType | null): boolean {
+  const expected = CATEGORY_META[category].partyType;
+  if (expected === null) return true; // OTHER: any party or none
+  return partyType === expected;
+}
+
+/** The party on the order who is the counterparty for this category (null if none / OTHER). */
+export function orderPartyFor(order: Pick<Order, 'buyerId' | 'sellerId' | 'commissionAgentId' | 'transporterId' | 'paymentAgentId'>, category: PaymentCategory): string | null {
+  switch (CATEGORY_META[category].paidKey) {
+    case 'buyer':
+      return order.buyerId;
+    case 'seller':
+      return order.sellerId;
+    case 'commission':
+      return order.commissionAgentId;
+    case 'freight':
+      return order.transporterId;
+    case 'paymentAgent':
+      return order.paymentAgentId;
+    default:
+      return null;
+  }
+}
+
+/** Throws unless the payment's category and party really belong to this order. */
+export function assertPaymentMatchesOrder(order: OrderForPayments, category: PaymentCategory, partyId: string | null): void {
+  if (!CATEGORY_META[category].paidKey) throw new PaymentIntegrityError('"Other" payments cannot be linked to an order');
+  const expected = orderPartyFor(order, category);
+  if (!expected) throw new PaymentIntegrityError(`This order has no party for ${CATEGORY_META[category].label.toLowerCase()}`);
+  if (expected !== partyId) throw new PaymentIntegrityError('That party is not on this order for this payment type');
+}
+
+/**
+ * New paid map after recording (sign +1) or voiding (sign −1) a payment.
+ * Paid totals stay whole paise, never negative, never above the obligation.
+ */
+export function applyPaymentToOrder(order: OrderForPayments, category: PaymentCategory, amount: number, sign: 1 | -1): PaidMap {
+  assertValidPaymentAmount(amount);
+  const key = CATEGORY_META[category].paidKey;
+  if (!key) throw new PaymentIntegrityError('"Other" payments cannot change order totals');
+  const current = order.paid[key] ?? 0;
+  const next = current + sign * amount;
+  if (!Number.isSafeInteger(next) || next < 0) throw new PaymentIntegrityError('Paid total would become negative');
+  const obligation = obligationAmount(order, key);
+  if (next > Math.max(0, obligation)) {
+    throw new PaymentIntegrityError(`This is more than the outstanding amount (${Math.max(0, obligation - current)} paise)`);
+  }
+  return { ...order.paid, [key]: next };
+}
+
+/** Keys whose paid total is invalid (non-integer, negative, or above the obligation). */
+export function invalidPaidKeys(order: OrderForPayments): PaidKey[] {
+  return (Object.keys(PARTY_TO_PAID_KEY_VALUES) as PaidKey[]).filter((k) => {
+    const v = order.paid[k];
+    return !Number.isSafeInteger(v) || v < 0 || (v > 0 && v > obligationAmount(order, k));
+  });
+}
+const PARTY_TO_PAID_KEY_VALUES: Record<PaidKey, true> = { buyer: true, seller: true, commission: true, freight: true, paymentAgent: true };
+
+export interface PaidMismatch {
+  orderId: string;
+  key: PaidKey;
+  cached: number;
+  fromPayments: number;
+}
+
+/** Recomputes each order's paid totals from ACTIVE payments and lists differences from the cached values. */
+export function reconcileOrderPaid(
+  orders: readonly (Pick<Order, 'id' | 'paid'>)[],
+  payments: readonly Pick<Payment, 'orderId' | 'category' | 'amount' | 'status'>[],
+): PaidMismatch[] {
+  const sums = new Map<string, PaidMap>();
+  for (const p of payments) {
+    const key = CATEGORY_META[p.category].paidKey;
+    if (p.status !== 'ACTIVE' || !p.orderId || !key) continue;
+    const m = sums.get(p.orderId) ?? emptyPaid();
+    m[key] += p.amount;
+    sums.set(p.orderId, m);
+  }
+  const out: PaidMismatch[] = [];
+  for (const o of orders) {
+    const actual = sums.get(o.id) ?? emptyPaid();
+    for (const k of Object.keys(actual) as PaidKey[]) {
+      if ((o.paid[k] ?? 0) !== actual[k]) out.push({ orderId: o.id, key: k, cached: o.paid[k] ?? 0, fromPayments: actual[k] });
+    }
+  }
+  return out;
+}

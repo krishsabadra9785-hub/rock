@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm run test && vite build",
     "emulators": "firebase emulators:start --only auth,firestore",
-    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes"
+    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
+    "test:rules": "npm --prefix tests/rules install --no-audit --no-fund && npx --yes firebase-tools emulators:exec --only firestore --project demo-rock \"npm --prefix tests/rules test\""
   },
   "dependencies": {
     "firebase": "^12.0.0",

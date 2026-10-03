@@ -43,7 +43,8 @@ export default function OrdersPage() {
 
   const load = useCallback(
     async (after: QueryDocumentSnapshot | null) => {
-      after ? setLoadingMore(true) : setLoading(true);
+      if (after) setLoadingMore(true);
+      else setLoading(true);
       setError(null);
       try {
         const page = await queryOrders(q, after);
@@ -97,7 +98,6 @@ export default function OrdersPage() {
             <option value="UNPAID">Unpaid</option>
             <option value="PARTIAL">Part paid</option>
             <option value="PAID">Paid</option>
-            <option value="OVERPAID">Overpaid</option>
           </Select>
         </Field>
         <Field label="Status" htmlFor="o-st">

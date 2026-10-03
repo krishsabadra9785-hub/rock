@@ -9,7 +9,7 @@ export function escapeCsvCell(value: string | number | null | undefined): string
   if (value === null || value === undefined) return '';
   let s = String(value);
   // Neutralise spreadsheet formula injection (cells starting with = + - @).
-  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  if (/^[-=+@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   if (/[",\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }

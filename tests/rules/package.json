@@ -1,0 +1,14 @@
+{
+  "name": "rock-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Firestore security rules tests. Run from the project root with: npm run test:rules (needs Java 21 for the emulator).",
+  "scripts": {
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.0.0",
+    "vitest": "^3.2.0"
+  }
+}

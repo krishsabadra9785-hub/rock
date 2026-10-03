@@ -20,7 +20,7 @@ import { db } from '../firebase/app';
 import { calculateOrder, type OrderFinancials } from '../domain/calc';
 import { todayISO, yearOf, type DateRange } from '../domain/dates';
 import { formatOrderNumber, nextSequence, orderCounterId } from '../domain/orderNumber';
-import { emptyPaid } from '../domain/payments';
+import { emptyPaid, invalidPaidKeys } from '../domain/payments';
 import { buildRateHistoryEntry, defaultRateFor, RATE_META, resolveRateSelection, type RateSelection } from '../domain/rates';
 import { orderContribution } from '../domain/rollups';
 import { buildSearchTokens } from '../domain/search';
@@ -123,6 +123,8 @@ export function toOrder(id: string, d: DocumentData): Order {
     transporterId: strOrNull(d.transporterId),
     paymentAgentId: strOrNull(d.paymentAgentId),
     paid: toPaid(d.paid),
+    lastPaymentId: strOrNull(d.lastPaymentId),
+    counterId: strOrNull(d.counterId),
     rateDecisions: Array.isArray(d.rateDecisions) ? (d.rateDecisions as RateDecisionRecord[]) : [],
     searchTokens: Array.isArray(d.searchTokens) ? (d.searchTokens as string[]) : [],
     notes: str(d.notes),
@@ -306,15 +308,34 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const agent = parties.get('COMMISSION_AGENT') ?? null;
     const transporter = parties.get('TRANSPORTER') ?? null;
     const pa = parties.get('PAYMENT_AGENT') ?? null;
+    // Only confirmed text fields + image METADATA. Never image content.
     const receipt: ReceiptSnapshot = {
-      ...input.receipt,
-      vehicleNumber: normalizeVehicleNumber(input.receipt.vehicleNumber),
-      ai: { ...input.receipt.ai, raw: input.receipt.ai.raw ? input.receipt.ai.raw.slice(0, MAX_RAW_AI) : null },
+      image: {
+        provider: input.receipt.image.provider,
+        ref: input.receipt.image.provider === 'NONE' ? null : input.receipt.image.ref,
+        fileName: input.receipt.image.fileName ? input.receipt.image.fileName.slice(0, 120) : null,
+        contentType: input.receipt.image.contentType ? input.receipt.image.contentType.slice(0, 60) : null,
+        sizeBytes: Number.isSafeInteger(input.receipt.image.sizeBytes) ? input.receipt.image.sizeBytes : null,
+      },
+      receiptNumber: input.receipt.receiptNumber.trim().slice(0, 120),
+      driverName: input.receipt.driverName.trim().slice(0, 120),
+      driverPhone: input.receipt.driverPhone.trim(),
+      vehicleNumber: normalizeVehicleNumber(input.receipt.vehicleNumber).slice(0, 20),
+      destination: input.receipt.destination.trim().slice(0, 120),
+      dispatchDate: input.receipt.dispatchDate,
+      netQtyKg: input.receipt.netQtyKg,
+      ai: {
+        status: input.receipt.ai.status,
+        model: input.receipt.ai.model ? input.receipt.ai.model.slice(0, 80) : null,
+        raw: input.receipt.ai.raw ? input.receipt.ai.raw.slice(0, MAX_RAW_AI) : null,
+        error: input.receipt.ai.error ? input.receipt.ai.error.slice(0, 500) : null,
+      },
     };
     const f = financialFields(fin);
     const orderData = {
       orderNumber,
       seq,
+      counterId: counterRef.id,
       status: 'CONFIRMED' as OrderStatus,
       dispatchDate: receipt.dispatchDate,
       qtyKg: fin.qtyKg,
@@ -330,6 +351,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       transporterId: transporter?.id ?? null,
       paymentAgentId: pa?.id ?? null,
       paid: emptyPaid(),
+      lastPaymentId: null,
       rateDecisions: Object.values(resolved)
         .filter((r): r is NonNullable<typeof r> => r !== null)
         .map((r) => r.record),
@@ -360,8 +382,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       const party = parties.get(meta.partyType)!;
       const current = defaultRateFor(party.rates, r.record.rateType);
       if (current === r.newDefault) continue;
+      const historyRef = doc(collection(db, COL.rateHistory));
       const u = updatesByParty.get(party.id) ?? {};
       u[`rates.${r.record.rateType}`] = r.newDefault;
+      // Links the default change to its (new) history entry; required by the rules.
+      u.lastRateChangeId = historyRef.id;
       updatesByParty.set(party.id, u);
       const h = buildRateHistoryEntry({
         partyId: party.id,
@@ -375,7 +400,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         sourceOrderNumber: orderNumber,
         reason: `Set as new default on order ${orderNumber}`,
       });
-      tx.set(doc(collection(db, COL.rateHistory)), { ...h, createdAt: serverTimestamp() });
+      tx.set(historyRef, { ...h, createdAt: serverTimestamp() });
     }
     for (const [pid, u] of updatesByParty) tx.update(doc(db, COL.parties, pid), { ...u, ...updatedFields(uid) });
 
@@ -581,6 +606,10 @@ export async function editOrder(id: string, input: OrderEditInput): Promise<void
     track('paymentAgent.ratePaise', before.paymentAgent.ratePaise, after.paymentAgent.ratePaise);
     track('notes', before.notes, after.notes);
     if (Object.keys(changes).length === 0) throw new AppError('Nothing was changed');
+    const tooLow = invalidPaidKeys(after);
+    if (tooLow.length > 0) {
+      throw new AppError(`This correction makes an amount smaller than what has already been paid (${tooLow.join(', ')}). Void the extra payment first.`);
+    }
 
     tx.update(ref, {
       dispatchDate: after.dispatchDate,
