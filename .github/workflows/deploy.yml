@@ -99,6 +99,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Install rules-test dependencies
+        run: |
+          if [ -f tests/rules/package-lock.json ]; then
+            npm ci --prefix tests/rules
+          else
+            npm install --prefix tests/rules --no-audit --no-fund
+          fi
+
+      - name: Check tool versions
+        run: |
+          node --version
+          java -version
+          npx --prefix tests/rules firebase --version
+
       - name: Firestore security rules tests
         run: npm run test:rules
 

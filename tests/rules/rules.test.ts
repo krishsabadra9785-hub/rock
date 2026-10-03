@@ -32,7 +32,7 @@ function referenceOrder(over: Record<string, unknown> = {}) {
       image: { provider: 'NONE', ref: null, fileName: 'slip.jpg', contentType: 'image/jpeg', sizeBytes: 2048 },
       receiptNumber: 'WB-1', driverName: 'Driver', driverPhone: '9800000009', vehicleNumber: 'MH12AB1234',
       destination: 'Pune', dispatchDate: '2026-10-03', netQtyKg: 38520,
-      ai: { status: 'SKIPPED', model: null, raw: null, error: null },
+      ai: { status: 'SKIPPED', model: '', raw: '', error: '' },
     },
     buyer: { id: 'B1', name: 'Buyer', ratePaise: 1250000, gstBp: 500, baseAmount: 48150000, gstAmount: 2407500, grossAmount: 50557500 },
     seller: { id: 'S1', name: 'Seller', ratePaise: 970000, amount: 37364400 },
@@ -167,6 +167,18 @@ describe('orders: financial validation', () => {
   it('rejects receipt image content in the order', async () => {
     await assertFails(createOrderAs('ops', { receipt: { ...referenceOrder().receipt, imageData: 'data:image/jpeg;base64,AAAA' } }));
     await assertFails(createOrderAs('ops', { receipt: { ...referenceOrder().receipt, image: { ...referenceOrder().receipt.image, ref: 'x'.repeat(50) } } }));
+  });
+  it('rejects non-string or oversized receipt text, and null where the app writes text', async () => {
+    const r = referenceOrder().receipt;
+    await assertFails(createOrderAs('ops', { receipt: { ...r, driverName: 'x'.repeat(800) } }));
+    await assertFails(createOrderAs('ops', { receipt: { ...r, driverName: { nested: 'data' } } }));
+    await assertFails(createOrderAs('ops', { receipt: { ...r, ai: { ...r.ai, raw: 'x'.repeat(9000) } } }));
+    await assertFails(createOrderAs('ops', { receipt: { ...r, image: { ...r.image, provider: 'FIREBASE_STORAGE', ref: 'receipts/x.jpg' } } }));
+  });
+  it('rejects a payment-agent charge larger than the buyer total', async () => {
+    // qty 38.52 × ₹14,000 = ₹5,39,280 > buyer gross ₹5,05,575 → negative balance
+    const pa = { id: 'P1', name: 'PA', ratePaise: 1400000, received: 50557500, deduction: 53928000, balance: -3370500 };
+    await assertFails(createOrderAs('ops', { paymentAgent: pa }));
   });
   it('orders can never be deleted', async () => {
     await seedOrder();
@@ -325,5 +337,79 @@ describe('rollups and audit log', () => {
     await assertSucceeds(setDoc(doc(as('ops'), 'auditLogs', 'L2'), { entityType: 'order', entityId: 'O1', action: 'X', summary: 'x', changes: null, reason: null, actorId: 'ops' }));
     await assertFails(updateDoc(doc(as('admin'), 'auditLogs', 'L2'), { summary: 'y' }));
     await assertFails(deleteDoc(doc(as('admin'), 'auditLogs', 'L2')));
+  });
+});
+
+describe('full application commits stay within Firestore rules limits', () => {
+  // These replay the complete multi-document writes the app performs, because
+  // Firestore's limits (1,000 expressions; 20 document lookups) apply per request.
+
+  it('order + counter + new default rate + rate history + statistics + audit (as OPERATIONS)', async () => {
+    // Transporter's saved default is ₹800/MT; this order uses ₹850 and makes it the new default.
+    await seed(async (db) => updateDoc(doc(db, 'parties', 'T1'), { 'rates.FREIGHT_RATE': 80000 }));
+    const db = as('ops');
+    const b = writeBatch(db);
+    b.set(doc(db, 'counters', 'orders-2026'), { seq: 1, year: 2026, updatedAt: serverTimestamp() });
+    b.set(doc(db, 'orders', 'O1'), {
+      ...referenceOrder({
+        rateDecisions: [{ rateType: 'FREIGHT_RATE', partyId: 'T1', defaultValue: 80000, value: 85000, decision: 'NEW_DEFAULT' }],
+      }),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    b.update(doc(db, 'parties', 'T1'), { 'rates.FREIGHT_RATE': 85000, lastRateChangeId: 'H1', updatedBy: 'ops', updatedAt: serverTimestamp() });
+    b.set(doc(db, 'rateHistory', 'H1'), {
+      partyId: 'T1', partyType: 'TRANSPORTER', rateType: 'FREIGHT_RATE', oldRate: 80000, newRate: 85000,
+      effectiveFrom: '2026-10-03', changedBy: 'ops', sourceOrderId: 'O1', sourceOrderNumber: 'ROCK-2026-000001',
+      reason: 'Set as new default on order ROCK-2026-000001', createdAt: serverTimestamp(),
+    });
+    const stats = {
+      totals: { orders: 1, qtyKg: 38520, buyerBase: 48150000, gst: 2407500, buyerGross: 50557500, seller: 37364400, commission: 2792700, freight: 3274200, paCharge: 3852000, paReceived: 50557500, paBalance: 46705500 },
+      parties: { BUYER: { B1: { n: 1, qtyKg: 38520, amount: 50557500, base: 48150000, gst: 2407500 } }, TRANSPORTER: { T1: { n: 1, qtyKg: 38520, amount: 3274200 } } },
+      updatedAt: serverTimestamp(),
+    };
+    b.set(doc(db, 'rollups', 'D-2026-10-03'), { kind: 'D', key: '2026-10-03', ...stats }, { merge: true });
+    b.set(doc(db, 'rollups', 'M-2026-10'), { kind: 'M', key: '2026-10', ...stats }, { merge: true });
+    b.set(doc(db, 'auditLogs', 'L1'), { entityType: 'order', entityId: 'O1', action: 'CREATE', summary: 'Created ROCK-2026-000001: Buyer ← Seller', changes: null, reason: null, actorId: 'ops', at: serverTimestamp() });
+    await assertSucceeds(b.commit());
+
+    const saved = (await getDoc(doc(as('view'), 'orders', 'O1'))).data() as ReturnType<typeof referenceOrder>;
+    const expect = (label: string, got: number, want: number) => {
+      if (got !== want) throw new Error(`${label}: got ${got}, want ${want}`);
+    };
+    expect('buyer base', saved.buyer.baseAmount, 48150000);
+    expect('GST', saved.buyer.gstAmount, 2407500);
+    expect('buyer gross', saved.buyer.grossAmount, 50557500);
+    expect('seller', saved.seller.amount, 37364400);
+    expect('commission', saved.commission.amount, 2792700);
+    expect('freight', saved.freight.amount, 3274200);
+    expect('PA received', saved.paymentAgent.received, 50557500);
+    expect('PA deduction', saved.paymentAgent.deduction, 3852000);
+    expect('PA balance', saved.paymentAgent.balance, 46705500);
+  });
+
+  it('payment + order paid total + statistics + audit (as ACCOUNTS)', async () => {
+    await seedOrder();
+    const db = as('acc');
+    const b = writeBatch(db);
+    b.set(doc(db, 'payments', 'PAY1'), { ...payment(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    b.update(doc(db, 'orders', 'O1'), { 'paid.freight': 1000000, lastPaymentId: 'PAY1', updatedBy: 'acc', updatedAt: serverTimestamp() });
+    const stats = { totals: { paid: { TRANSPORTER_PAYMENT: 1000000 } }, parties: { TRANSPORTER: { T1: { paid: 1000000 } } }, updatedAt: serverTimestamp() };
+    b.set(doc(db, 'rollups', 'D-2026-10-04'), { kind: 'D', key: '2026-10-04', ...stats }, { merge: true });
+    b.set(doc(db, 'rollups', 'M-2026-10'), { kind: 'M', key: '2026-10', ...stats }, { merge: true });
+    b.set(doc(db, 'auditLogs', 'L2'), { entityType: 'payment', entityId: 'PAY1', action: 'CREATE', summary: 'Transporter payment ₹10,000 — Trans (ROCK-2026-000001)', changes: null, reason: null, actorId: 'acc', at: serverTimestamp() });
+    await assertSucceeds(b.commit());
+  });
+
+  it('audited correction of a paid order stays valid (as ACCOUNTS)', async () => {
+    await seedOrder({ paid: { buyer: 0, seller: 0, commission: 0, freight: 1000000, paymentAgent: 0 }, lastPaymentId: 'PAY0' });
+    const o = referenceOrder();
+    await assertSucceeds(updateDoc(doc(as('acc'), 'orders', 'O1'), {
+      'receipt.driverName': 'Corrected Driver', notes: 'Name corrected', version: 2, updatedBy: 'acc',
+    }));
+    // A correction that drops freight below the ₹10,000 already paid is rejected.
+    await assertFails(updateDoc(doc(as('acc'), 'orders', 'O1'), {
+      freight: { ...o.freight, ratePaise: 0, amount: 0 }, version: 3, updatedBy: 'acc',
+    }));
   });
 });

@@ -13,7 +13,7 @@ import { amountForQuantity, isSafeInt, percentOf, type BasisPoints, type Kg, typ
  *   Freight             = qty × freight rate
  *   Payment agent gets  = buyer gross
  *   Payment agent charge= qty × payment-agent rate
- *   Balance passed on   = buyer gross − payment agent charge
+ *   Balance passed on   = buyer gross − payment agent charge  (never negative)
  */
 
 export interface OrderRateInputs {
@@ -79,6 +79,9 @@ export function calculateOrder(inputs: OrderRateInputs): OrderFinancials {
   const grossAmount = baseAmount + gstAmount;
 
   const paDeduction = amountForQuantity(qtyKg, inputs.paymentAgentRatePaise);
+  if (paDeduction > grossAmount) {
+    throw new CalculationError('paymentAgentRatePaise', 'Payment agent charge cannot be more than the buyer total');
+  }
 
   return {
     qtyKg,

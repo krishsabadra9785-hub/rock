@@ -77,7 +77,8 @@ describe('GST', () => {
   });
   it('handles fractional GST like 2.5% with half-up rounding', () => {
     // 0.333 MT × ₹101 = ₹33.633 → 3363.3 paise → 3363; GST 2.5% = 84.075 → 84 paise
-    const r = calculateOrder({ ...REFERENCE, qtyKg: 333, buyerRatePaise: 10_100, gstBp: 250 });
+    // Payment-agent rate 0: at this tiny value the ₹1,000/MT charge would exceed the buyer total.
+    const r = calculateOrder({ ...REFERENCE, qtyKg: 333, buyerRatePaise: 10_100, gstBp: 250, paymentAgentRatePaise: 0 });
     expect(r.buyer.baseAmount).toBe(3363);
     expect(r.buyer.gstAmount).toBe(84);
   });
@@ -119,6 +120,10 @@ describe('validation inside calculation', () => {
   it('rejects NaN and fractional base units', () => {
     expect(() => calculateOrder({ ...REFERENCE, qtyKg: Number.NaN })).toThrow(CalculationError);
     expect(() => calculateOrder({ ...REFERENCE, buyerRatePaise: 12.5 })).toThrow(CalculationError);
+  });
+  it('rejects a payment-agent charge larger than the buyer total (balance would go negative)', () => {
+    expect(() => calculateOrder({ ...REFERENCE, paymentAgentRatePaise: 1_400_000 })).toThrow(CalculationError);
+    expect(calculateOrder({ ...REFERENCE, paymentAgentRatePaise: 1_312_500 }).paymentAgent.balance).toBe(0);
   });
   it('tryCalculateOrder returns null instead of throwing', () => {
     expect(tryCalculateOrder({ qtyKg: 0 })).toBeNull();

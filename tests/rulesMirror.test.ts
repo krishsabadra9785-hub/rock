@@ -19,13 +19,44 @@ const rand = (max: number) => {
 };
 
 describe('rules arithmetic mirror', () => {
-  it('the rules file contains the same formula', () => {
+  it('the rules file contains the same formulas', () => {
     const rules = readFileSync(fileURLToPath(new URL('../firestore.rules', import.meta.url)), 'utf8');
-    expect(rules.includes('amount * div - half <= a * b')).toBe(true);
-    expect(rules.includes('a * b < amount * div + half')).toBe(true);
-    expect(rules.includes('d.paymentAgent.balance == d.paymentAgent.received - d.paymentAgent.deduction')).toBe(true);
-    expect(rules.includes('d.paymentAgent.received == d.buyer.grossAmount')).toBe(true);
-    expect(rules.includes('d.buyer.grossAmount == d.buyer.baseAmount + d.buyer.gstAmount')).toBe(true);
+    for (const text of [
+      'let rBase = q * b.ratePaise - b.baseAmount * 1000 + 500;',
+      'let rGst = b.baseAmount * b.gstBp - b.gstAmount * 10000 + 5000;',
+      'let rPa = q * pa.ratePaise - pa.deduction * 1000 + 500;',
+      'let rS = q * s.ratePaise - s.amount * 1000 + 500;',
+      'let rC = q * c.ratePaise - c.amount * 1000 + 500;',
+      'let rF = q * f.ratePaise - f.amount * 1000 + 500;',
+      'b.baseAmount is int && rBase >= 0 && rBase < 1000',
+      'b.gstAmount is int && rGst >= 0 && rGst < 10000',
+      'b.grossAmount == b.baseAmount + b.gstAmount',
+      'pa.received == b.grossAmount',
+      'pa.balance == b.grossAmount - pa.deduction',
+      'pa.balance >= 0',
+    ]) {
+      expect(rules.includes(text)).toBe(true);
+    }
+  });
+
+  /** The exact remainder test the rules use: 0 ≤ product − amount·div + div/2 < div. */
+  const ruleRemainderOk = (amount: number, product: bigint, div: number) => {
+    if (!Number.isSafeInteger(amount)) return false;
+    const r = product - BigInt(amount) * BigInt(div) + BigInt(div / 2);
+    return r >= 0n && r < BigInt(div);
+  };
+
+  it('the rules remainder test is equivalent to half-up rounding', () => {
+    for (let i = 0; i < 5000; i++) {
+      const a = rand(1_000_000);
+      const b = rand(100_000_000);
+      const p = BigInt(a) * BigInt(b);
+      const amount = Number((p + 500n) / 1000n); // half-up for non-negative
+      expect(ruleRemainderOk(amount, p, 1000)).toBe(true);
+      expect(isRoundedProduct(amount, a, b, 1000)).toBe(true);
+      expect(ruleRemainderOk(amount + 1, p, 1000)).toBe(false);
+      if (amount > 0) expect(ruleRemainderOk(amount - 1, p, 1000)).toBe(false);
+    }
   });
 
   it('38.52 MT reference order satisfies every rule check', () => {
@@ -50,6 +81,9 @@ describe('rules arithmetic mirror', () => {
       expect(isRoundedProduct(f.buyer.baseAmount + 1, qtyKg, rate, 1000)).toBe(false);
       if (f.buyer.baseAmount > 0) expect(isRoundedProduct(f.buyer.baseAmount - 1, qtyKg, rate, 1000)).toBe(false);
       expect(isRoundedProduct(f.buyer.gstAmount + 1, f.buyer.baseAmount, gstBp, 10000)).toBe(false);
+      expect(ruleRemainderOk(f.seller.amount, BigInt(qtyKg) * BigInt(rate), 1000)).toBe(true);
+      expect(ruleRemainderOk(f.buyer.gstAmount, BigInt(f.buyer.baseAmount) * BigInt(gstBp), 10000)).toBe(true);
+      expect(f.paymentAgent.balance >= 0).toBe(true);
     }
   });
 

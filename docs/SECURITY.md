@@ -34,8 +34,19 @@ Layers: **A** Firestore rules · **B** transactions/atomic batches · **C** app 
 | No deletion of orders, payments, parties, rate history, audit logs | A, E |
 | Default rate change always creates a new history entry with the real old value; history is append-only | A (`rateChangeRecorded`, `validRateHistory`), B, E |
 | Changing a master rate never changes saved orders | D (orders store their own rates/amounts; nothing recomputes them), E |
-| No receipt image content in Firestore | A (receipt key whitelist + size limits), C (`NoPermanentStorageProvider` returns metadata only), E |
+| No receipt image content in Firestore | A (receipt key whitelists; provider must be `NONE`; all receipt text must be strings with ≤ 700 characters in total, AI output ≤ 8,600), C (`NoPermanentStorageProvider` returns metadata only), E |
+| Payment-agent balance never negative (charge ≤ buyer total) | A, C, E |
 | Dashboard statistics (`rollups`) match the source records | B (updated in the same transaction), plus **Check figures** / **Rebuild statistics** (deterministic recomputation). See residual risks. |
+
+## Rules expression budget
+
+Firestore evaluates at most 1,000 expressions per request, and function arguments are re-evaluated wherever a parameter is used. The order rules are therefore written to touch each value once:
+- Each amount is checked with one remainder, `0 ≤ qty×rate − amount×1000 + 500 < 1000`. That is exact half-up rounding, and it also implies amount ≥ 0 and amount = 0 for a zero rate.
+- All receipt text is checked with one concatenated string-length test.
+- Updates are validated with per-purpose field whitelists (`affectedKeys().hasOnly`) instead of full-document checks.
+- A rate-only party update validates just the rates and history.
+
+`tests/rules/rules.test.ts` replays the app's complete order, payment and correction commits so the budget is tested, not assumed.
 
 ## Residual risks (client-side / serverless architecture)
 
@@ -46,7 +57,8 @@ There is no trusted server on the free plan, so be clear about what remains:
 3. **The PIN is a device unlock, not server-verified** (see below).
 4. **Audit log entries are written by the client.** Rules make them append-only and attributed to the caller's uid. A user calling Firestore directly could omit an audit entry for a legitimate action. The financial records themselves (with `createdBy`/`updatedBy`, `version`, rate history, voided payments) remain.
 5. **Configuration-dependent:** the rules must actually be published; App Check enforcement is a manual console step; Authorized domains must be set; self sign-up should be disabled where available.
-6. **Pre-existing data:** the paid-total invariant holds by induction from creation under these rules. Data written under an older rule set should be checked once with **Check figures**.
+6. **Receipt storage provider:** V1 rules accept only `provider: 'NONE'`. Enabling image storage later requires a rules change as well as the new provider.
+7. **Pre-existing data:** the paid-total invariant holds by induction from creation under these rules. Data written under an older rule set should be checked once with **Check figures**.
 
 ## Role matrix
 

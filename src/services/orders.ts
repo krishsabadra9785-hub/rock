@@ -309,13 +309,18 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const transporter = parties.get('TRANSPORTER') ?? null;
     const pa = parties.get('PAYMENT_AGENT') ?? null;
     // Only confirmed text fields + image METADATA. Never image content.
+    // Optional text is stored as '' (not null) and sizes as integers: the
+    // security rules check all receipt text with one string-length test.
+    if (input.receipt.image.provider !== 'NONE') {
+      throw new AppError('Receipt image storage is not enabled in this version of ROCK');
+    }
     const receipt: ReceiptSnapshot = {
       image: {
-        provider: input.receipt.image.provider,
-        ref: input.receipt.image.provider === 'NONE' ? null : input.receipt.image.ref,
-        fileName: input.receipt.image.fileName ? input.receipt.image.fileName.slice(0, 120) : null,
-        contentType: input.receipt.image.contentType ? input.receipt.image.contentType.slice(0, 60) : null,
-        sizeBytes: Number.isSafeInteger(input.receipt.image.sizeBytes) ? input.receipt.image.sizeBytes : null,
+        provider: 'NONE',
+        ref: null,
+        fileName: (input.receipt.image.fileName ?? '').slice(0, 120),
+        contentType: (input.receipt.image.contentType ?? '').slice(0, 60),
+        sizeBytes: Number.isSafeInteger(input.receipt.image.sizeBytes) ? (input.receipt.image.sizeBytes as number) : 0,
       },
       receiptNumber: input.receipt.receiptNumber.trim().slice(0, 120),
       driverName: input.receipt.driverName.trim().slice(0, 120),
@@ -326,9 +331,9 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       netQtyKg: input.receipt.netQtyKg,
       ai: {
         status: input.receipt.ai.status,
-        model: input.receipt.ai.model ? input.receipt.ai.model.slice(0, 80) : null,
-        raw: input.receipt.ai.raw ? input.receipt.ai.raw.slice(0, MAX_RAW_AI) : null,
-        error: input.receipt.ai.error ? input.receipt.ai.error.slice(0, 500) : null,
+        model: (input.receipt.ai.model ?? '').slice(0, 80),
+        raw: (input.receipt.ai.raw ?? '').slice(0, MAX_RAW_AI),
+        error: (input.receipt.ai.error ?? '').slice(0, 500),
       },
     };
     const f = financialFields(fin);
@@ -568,8 +573,8 @@ export async function editOrder(id: string, input: OrderEditInput): Promise<void
       receiptNumber: input.receiptNumber.trim(),
       driverName: input.driverName.trim(),
       driverPhone: input.driverPhone.trim(),
-      vehicleNumber: normalizeVehicleNumber(input.vehicleNumber),
-      destination: input.destination.trim(),
+      vehicleNumber: normalizeVehicleNumber(input.vehicleNumber).slice(0, 20),
+      destination: input.destination.trim().slice(0, 120),
       dispatchDate: input.dispatchDate,
       netQtyKg: fin.qtyKg,
     };

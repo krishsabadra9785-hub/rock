@@ -22,7 +22,8 @@ rules_version = '2';
 //  * No receipt images (or other large blobs) can be stored in orders.
 //
 // Keep src/domain/permissions.ts and src/domain/money.ts (isRoundedProduct)
-// in sync with these rules.
+// in sync with these rules. Order validation is written to stay well inside
+// Firestore's limit of 1,000 evaluated expressions per request.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -33,37 +34,27 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function uid() { return request.auth.uid; }
     function docPath(col, id) { return /databases/$(database)/documents/$(col)/$(id); }
-    function userPath() { return docPath('users', request.auth.uid); }
-    function profile() { return get(userPath()).data; }
-    function isActive() { return signedIn() && exists(userPath()) && profile().active == true; }
-    function hasRole(roles) { return isActive() && profile().role in roles; }
-    function isAdmin() { return hasRole(['ADMIN']); }
-    function canOperate() { return hasRole(['ADMIN', 'ACCOUNTS', 'OPERATIONS']); }
-    function canAccount() { return hasRole(['ADMIN', 'ACCOUNTS']); }
+    // Missing profile → get() errors → the rule denies (same as "not active").
+    function me() { return get(docPath('users', request.auth.uid)).data; }
+    function isActive() { return signedIn() && me().active == true; }
+    function hasRole(roles) { let u = me(); return u.active == true && u.role in roles; }
+    function isAdmin() { return signedIn() && hasRole(['ADMIN']); }
+    function canOperate() { return signedIn() && hasRole(['ADMIN', 'ACCOUNTS', 'OPERATIONS']); }
+    function canAccount() { return signedIn() && hasRole(['ADMIN', 'ACCOUNTS']); }
 
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     function changed() { return incoming().diff(existing()).affectedKeys(); }
-    function unchanged(keys) { return !changed().hasAny(keys); }
 
     function intIn(v, lo, hi) { return v is int && v >= lo && v <= hi; }
     function isOptString(v, max) { return v == null || (v is string && v.size() <= max); }
     function isText(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
     function isISODate(v) { return v is string && v.matches('^20[0-9]{2}-[01][0-9]-[0-3][0-9]$'); }
 
-    // Business limits (mirror src/domain/validation.ts)
-    function maxQtyKg() { return 1000000; }        // 1,000 MT
-    function maxRate() { return 100000000; }       // ₹10,00,000 per MT
-    function maxGstBp() { return 2800; }           // 28%
-    function maxPayment() { return 100000000000; } // ₹100 crore
+    // Business limits (mirror src/domain/validation.ts): qty ≤ 1,000 MT (1,000,000 kg),
+    // rate ≤ ₹10,00,000/MT (100,000,000 paise), GST ≤ 28% (2800 bp), payment ≤ ₹100 crore.
 
-    // amount == roundHalfUp(a × b ÷ div) for non-negative integers, without division:
-    //   amount·div − div/2 ≤ a·b < amount·div + div/2
-    function roundedProduct(amount, a, b, div, half) {
-      return amount is int && amount >= 0
-        && amount * div - half <= a * b
-        && a * b < amount * div + half;
-    }
+    function isRate(r) { return r is int && r >= 0 && r <= 100000000; } // ≤ ₹10,00,000 per MT
 
     // ======================================================================
     // users — access control
@@ -126,12 +117,12 @@ service cloud.firestore {
     function validRates(r, type) {
       return r is map
         && r.keys().hasOnly(ratesForType(type))
-        && intIn(r.get('BUYER_RATE', 0), 0, maxRate())
-        && intIn(r.get('BUYER_GST', 0), 0, maxGstBp())
-        && intIn(r.get('SELLER_RATE', 0), 0, maxRate())
-        && intIn(r.get('COMMISSION_RATE', 0), 0, maxRate())
-        && intIn(r.get('FREIGHT_RATE', 0), 0, maxRate())
-        && intIn(r.get('PAYMENT_AGENT_RATE', 0), 0, maxRate());
+        && isRate(r.get('BUYER_RATE', 0))
+        && intIn(r.get('BUYER_GST', 0), 0, 2800)
+        && isRate(r.get('SELLER_RATE', 0))
+        && isRate(r.get('COMMISSION_RATE', 0))
+        && isRate(r.get('FREIGHT_RATE', 0))
+        && isRate(r.get('PAYMENT_AGENT_RATE', 0));
     }
     function validPartyBody(d) {
       return d.keys().hasOnly(partyKeys())
@@ -151,6 +142,17 @@ service cloud.firestore {
         && getAfter(docPath('rateHistory', hid)).data.partyId == partyId;
     }
 
+    function validPartyUpdate(partyId, d, old) {
+      let ch = d.diff(old).affectedKeys();
+      return d.updatedBy == request.auth.uid
+        && !ch.hasAny(['type', 'code', 'createdAt', 'createdBy'])
+        && (ch.hasOnly(['rates', 'lastRateChangeId', 'updatedAt', 'updatedBy'])
+            // default-rate change (e.g. inside an order commit): rates + genuine new history entry
+            ? (validRates(d.rates, d.type) && rateChangeRecorded(partyId))
+            // profile edit: full body re-validated, rates untouched
+            : (!ch.hasAny(['rates', 'lastRateChangeId']) && validPartyBody(d)));
+    }
+
     match /parties/{partyId} {
       allow read: if isActive();
       allow create: if canOperate()
@@ -158,11 +160,7 @@ service cloud.firestore {
         && incoming().code.matches('^(BUY|SEL|AGT|TRN|PAG)-[0-9]{4,}$')
         && incoming().active == true
         && incoming().createdBy == uid() && incoming().updatedBy == uid();
-      allow update: if canOperate()
-        && validPartyBody(incoming())
-        && unchanged(['type', 'code', 'createdAt', 'createdBy'])
-        && incoming().updatedBy == uid()
-        && (unchanged(['rates']) || rateChangeRecorded(partyId));
+      allow update: if canOperate() && validPartyUpdate(partyId, request.resource.data, resource.data);
       allow delete: if false; // deactivate instead
     }
 
@@ -174,7 +172,7 @@ service cloud.firestore {
                'changedBy', 'sourceOrderId', 'sourceOrderNumber', 'reason', 'createdAt'])
         && h.changedBy == uid()
         && h.rateType in ratesForType(h.partyType)
-        && intIn(h.newRate, 0, maxRate())
+        && isRate(h.newRate)
         && isISODate(h.effectiveFrom)
         && isOptString(h.reason, 200)
         // the party really has this type and, after this commit, this rate
@@ -205,6 +203,12 @@ service cloud.firestore {
     // ======================================================================
     // orders
     // ======================================================================
+    // EXPRESSION BUDGET. Firestore evaluates at most 1,000 expressions per
+    // request, and function arguments are re-evaluated wherever a parameter is
+    // referenced. So the order checks below are written to touch each field
+    // once: no nested helper chains, one `let` per value, and checks that prove
+    // several properties at once (see validReceipt and the rounding remainders).
+
     function orderKeys() {
       return ['orderNumber', 'seq', 'counterId', 'status', 'dispatchDate', 'qtyKg', 'receipt',
               'buyer', 'seller', 'commission', 'freight', 'paymentAgent',
@@ -212,100 +216,122 @@ service cloud.firestore {
               'paid', 'lastPaymentId', 'rateDecisions', 'searchTokens', 'notes', 'version',
               'cancelReason', 'demo', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
     }
+    function zeroPaid() { return {'buyer': 0, 'seller': 0, 'commission': 0, 'freight': 0, 'paymentAgent': 0}; }
 
-    // Receipt holds confirmed text only. No image content can fit or be smuggled.
-    function validReceipt(r, d) {
+    // Receipt = confirmed text + image METADATA only (V1: images are never stored).
+    // `a + b + …` only works if every part is a string, so ONE size check proves
+    // "all these fields are strings and together ≤ N characters": no image,
+    // Base64 or other blob can be placed in a receipt.
+    function validReceipt(r, q, date) {
+      let img = r.image;
+      let ai = r.ai;
       return r.keys().hasOnly(['image', 'receiptNumber', 'driverName', 'driverPhone', 'vehicleNumber',
                'destination', 'dispatchDate', 'netQtyKg', 'ai', 'confirmedAt', 'confirmedBy'])
-        && r.image.keys().hasOnly(['provider', 'ref', 'fileName', 'contentType', 'sizeBytes'])
-        && r.image.provider in ['NONE', 'FIREBASE_STORAGE']
-        && (r.image.provider != 'NONE' || r.image.ref == null)
-        && isOptString(r.image.ref, 300) && isOptString(r.image.fileName, 120)
-        && isOptString(r.image.contentType, 60)
-        && (r.image.sizeBytes == null || r.image.sizeBytes is int)
-        && isOptString(r.receiptNumber, 120) && isOptString(r.driverName, 120)
-        && isOptString(r.driverPhone, 20) && isOptString(r.vehicleNumber, 20)
-        && isOptString(r.destination, 120)
-        && r.ai.keys().hasOnly(['status', 'model', 'raw', 'error'])
-        && r.ai.status in ['SUCCESS', 'PARTIAL', 'FAILED', 'SKIPPED']
-        && isOptString(r.ai.model, 80) && isOptString(r.ai.raw, 8000) && isOptString(r.ai.error, 500)
-        && r.netQtyKg == d.qtyKg
-        && r.dispatchDate == d.dispatchDate;
+        && img.keys().hasOnly(['provider', 'ref', 'fileName', 'contentType', 'sizeBytes'])
+        && ai.keys().hasOnly(['status', 'model', 'raw', 'error'])
+        && img.provider == 'NONE' && img.ref == null && img.sizeBytes is int
+        && ai.status in ['SUCCESS', 'PARTIAL', 'FAILED', 'SKIPPED']
+        && (r.receiptNumber + r.driverName + r.driverPhone + r.vehicleNumber + r.destination
+            + img.fileName + img.contentType).size() <= 700
+        && (ai.model + ai.error + ai.raw).size() <= 8600
+        && r.netQtyKg == q
+        && r.dispatchDate == date;
     }
 
-    // Paid totals: integer paise, 0 ≤ paid ≤ obligation (no overpayment against an order).
-    function paidWithin(v, obligation) { return v is int && v >= 0 && (v == 0 || v <= obligation); }
-    function validPaid(d) {
-      return d.paid.keys().hasOnly(['buyer', 'seller', 'commission', 'freight', 'paymentAgent'])
-        && d.paid.keys().hasAll(['buyer', 'seller', 'commission', 'freight', 'paymentAgent'])
-        && paidWithin(d.paid.buyer, d.buyer.grossAmount)
-        && paidWithin(d.paid.seller, d.seller.amount)
-        && paidWithin(d.paid.commission, d.commission.amount)
-        && paidWithin(d.paid.freight, d.freight.amount)
-        && paidWithin(d.paid.paymentAgent, d.paymentAgent.balance);
-    }
-    function allPaidZero(d) {
-      return d.paid.buyer == 0 && d.paid.seller == 0 && d.paid.commission == 0
-        && d.paid.freight == 0 && d.paid.paymentAgent == 0;
+    // ROUNDING. amount == roundHalfUp(product ÷ div) for integers is exactly
+    //   0 ≤ product − amount·div + div/2 < div
+    // so each amount needs one remainder and two comparisons. A non-negative
+    // product then also forces amount ≥ 0, and a zero rate forces amount = 0.
+
+    // Buyer (base, GST, gross) and payment agent (received, deduction, balance).
+    function validBuyerAndAgent(d) {
+      let q = d.qtyKg;
+      let b = d.buyer;
+      let pa = d.paymentAgent;
+      let rBase = q * b.ratePaise - b.baseAmount * 1000 + 500;
+      let rGst = b.baseAmount * b.gstBp - b.gstAmount * 10000 + 5000;
+      let rPa = q * pa.ratePaise - pa.deduction * 1000 + 500;
+      return q is int && q > 0 && q <= 1000000
+        && b.ratePaise is int && b.ratePaise >= 0 && b.ratePaise <= 100000000
+        && b.gstBp is int && b.gstBp >= 0 && b.gstBp <= 2800
+        && pa.ratePaise is int && pa.ratePaise >= 0 && pa.ratePaise <= 100000000
+        && b.baseAmount is int && rBase >= 0 && rBase < 1000
+        && b.gstAmount is int && rGst >= 0 && rGst < 10000
+        && b.grossAmount == b.baseAmount + b.gstAmount
+        && pa.deduction is int && rPa >= 0 && rPa < 1000
+        && pa.received == b.grossAmount
+        && pa.balance == b.grossAmount - pa.deduction
+        && pa.balance >= 0
+        && (d.paymentAgentId != null || pa.ratePaise == 0);
     }
 
-    // Every amount re-derived from quantity × rate (same rounding as the app).
-    function validFinancials(d) {
-      return intIn(d.qtyKg, 1, maxQtyKg())
-        && isISODate(d.dispatchDate)
-        && intIn(d.buyer.ratePaise, 0, maxRate())
-        && intIn(d.buyer.gstBp, 0, maxGstBp())
-        && roundedProduct(d.buyer.baseAmount, d.qtyKg, d.buyer.ratePaise, 1000, 500)
-        && roundedProduct(d.buyer.gstAmount, d.buyer.baseAmount, d.buyer.gstBp, 10000, 5000)
-        && d.buyer.grossAmount == d.buyer.baseAmount + d.buyer.gstAmount
-        && intIn(d.seller.ratePaise, 0, maxRate())
-        && roundedProduct(d.seller.amount, d.qtyKg, d.seller.ratePaise, 1000, 500)
-        && intIn(d.commission.ratePaise, 0, maxRate())
-        && roundedProduct(d.commission.amount, d.qtyKg, d.commission.ratePaise, 1000, 500)
-        && intIn(d.freight.ratePaise, 0, maxRate())
-        && roundedProduct(d.freight.amount, d.qtyKg, d.freight.ratePaise, 1000, 500)
-        && intIn(d.paymentAgent.ratePaise, 0, maxRate())
-        && roundedProduct(d.paymentAgent.deduction, d.qtyKg, d.paymentAgent.ratePaise, 1000, 500)
-        // Payment agent receives the buyer gross and passes on gross − deduction
-        && d.paymentAgent.received == d.buyer.grossAmount
-        && d.paymentAgent.balance == d.paymentAgent.received - d.paymentAgent.deduction
-        // No party → no rate and no amount
-        && (d.commissionAgentId != null || (d.commission.ratePaise == 0 && d.commission.amount == 0))
-        && (d.transporterId != null || (d.freight.ratePaise == 0 && d.freight.amount == 0))
-        && (d.paymentAgentId != null || (d.paymentAgent.ratePaise == 0 && d.paymentAgent.deduction == 0))
-        && validPaid(d)
-        && d.searchTokens is list && d.searchTokens.size() <= 120
-        && isOptString(d.notes, 500);
+    // Seller, commission and freight: amount = roundHalfUp(qty × rate ÷ 1000).
+    function validCosts(d) {
+      let q = d.qtyKg;
+      let s = d.seller;
+      let c = d.commission;
+      let f = d.freight;
+      let rS = q * s.ratePaise - s.amount * 1000 + 500;
+      let rC = q * c.ratePaise - c.amount * 1000 + 500;
+      let rF = q * f.ratePaise - f.amount * 1000 + 500;
+      return s.ratePaise is int && s.ratePaise >= 0 && s.ratePaise <= 100000000
+        && c.ratePaise is int && c.ratePaise >= 0 && c.ratePaise <= 100000000
+        && f.ratePaise is int && f.ratePaise >= 0 && f.ratePaise <= 100000000
+        && s.amount is int && rS >= 0 && rS < 1000
+        && c.amount is int && rC >= 0 && rC < 1000
+        && f.amount is int && rF >= 0 && rF < 1000
+        // no party → no rate (and therefore amount 0)
+        && (d.commissionAgentId != null || c.ratePaise == 0)
+        && (d.transporterId != null || f.ratePaise == 0);
     }
 
-    // Order lines must point at real parties of the right type (create only;
-    // parties can never change afterwards).
-    function partyOk(id, line, type) {
-      let p = get(docPath('parties', id)).data;
-      return id is string && line.id == id && p.type == type && line.name == p.name;
-    }
-    function optionalPartyOk(id, line, type) {
-      return (id == null && line.id == null) || partyOk(id, line, type);
+    // Order lines point at real parties of the right type with matching names.
+    function partyIs(id, line, type) {
+      let p = get(/databases/$(database)/documents/parties/$(id)).data;
+      return line.id == id && p.type == type && line.name == p.name;
     }
     function validParties(d) {
-      return partyOk(d.buyerId, d.buyer, 'BUYER')
-        && partyOk(d.sellerId, d.seller, 'SELLER')
-        && optionalPartyOk(d.commissionAgentId, d.commission, 'COMMISSION_AGENT')
-        && optionalPartyOk(d.transporterId, d.freight, 'TRANSPORTER')
-        && optionalPartyOk(d.paymentAgentId, d.paymentAgent, 'PAYMENT_AGENT');
+      return d.buyerId is string && partyIs(d.buyerId, d.buyer, 'BUYER')
+        && d.sellerId is string && partyIs(d.sellerId, d.seller, 'SELLER')
+        && (d.commissionAgentId == null ? d.commission.id == null
+             : partyIs(d.commissionAgentId, d.commission, 'COMMISSION_AGENT'))
+        && (d.transporterId == null ? d.freight.id == null
+             : partyIs(d.transporterId, d.freight, 'TRANSPORTER'))
+        && (d.paymentAgentId == null ? d.paymentAgent.id == null
+             : partyIs(d.paymentAgentId, d.paymentAgent, 'PAYMENT_AGENT'));
     }
 
     // Order number = the counter value allocated in this very commit.
     function validNumbering(d) {
-      let c = docPath('counters', d.counterId);
-      return d.counterId is string && d.counterId.matches('^orders-20[0-9]{2}$')
-        && d.seq is int && d.seq >= 1
-        && getAfter(c).data.seq == d.seq
-        && ((d.seq == 1 && !exists(c)) || (exists(c) && get(c).data.seq == d.seq - 1))
-        && d.orderNumber.matches('^[A-Z0-9]{1,10}-' + d.counterId.split('-')[1] + '-0*' + string(d.seq) + '$');
+      let c = /databases/$(database)/documents/counters/$(d.counterId);
+      let seq = d.seq;
+      return d.counterId.matches('^orders-20[0-9]{2}$')
+        && seq is int && seq >= 1
+        && getAfter(c).data.seq == seq
+        && (seq == 1 ? !exists(c) : get(c).data.seq == seq - 1)
+        && d.orderNumber.matches('^[A-Z0-9]{1,10}-' + d.counterId.split('-')[1] + '-0*' + string(seq) + '$');
     }
 
-    // Payment category → order obligation / party field
+    function validOrderCreate(d) {
+      return d.keys().hasOnly(orderKeys())
+        && d.status == 'CONFIRMED'
+        && d.version == 1
+        && d.cancelReason == null
+        && d.lastPaymentId == null
+        && d.createdBy == request.auth.uid && d.updatedBy == request.auth.uid
+        // a new order has nothing paid: exact map equality (all five keys, integer 0, nothing else)
+        && d.paid == zeroPaid()
+        && d.rateDecisions is list && d.rateDecisions.size() <= 6
+        && d.searchTokens is list && d.searchTokens.size() <= 120
+        && d.notes is string && d.notes.size() <= 500
+        && validReceipt(d.receipt, d.qtyKg, d.dispatchDate)
+        && validBuyerAndAgent(d)
+        && validCosts(d)
+        && validParties(d)
+        && validNumbering(d);
+    }
+
+    // Payment category → order obligation / party
     function paidKeyFor(category) {
       return category == 'BUYER_RECEIPT' ? 'buyer'
         : category == 'SELLER_PAYMENT' ? 'seller'
@@ -330,76 +356,79 @@ service cloud.firestore {
         : key == 'paymentAgent' ? o.paymentAgentId
         : null;
     }
-
-    // Only paid[key] changes, by exactly `delta`.
-    function paidMovedBy(key, delta) {
-      return key != 'none'
-        && incoming().paid.diff(existing().paid).affectedKeys().hasOnly([key])
-        && incoming().paid[key] == existing().paid[key] + delta;
+    function obligationFor(d, key) {
+      return key == 'buyer' ? d.buyer.grossAmount
+        : key == 'seller' ? d.seller.amount
+        : key == 'commission' ? d.commission.amount
+        : key == 'freight' ? d.freight.amount
+        : d.paymentAgent.balance;
     }
-    // The paid change is backed by the payment named in lastPaymentId being
-    // created (ACTIVE) or voided in this same commit, for this order.
-    function paidChangeBackedByPayment(orderId) {
-      let pid = incoming().lastPaymentId;
-      let paymentPath = docPath('payments', pid);
-      let after = getAfter(paymentPath).data;
-      let isNew = !exists(paymentPath);
-      return pid is string && after.orderId == orderId && (
-        // payment created in this commit: paid moves up by its amount
-        (isNew && after.status == 'ACTIVE' && paidMovedBy(paidKeyFor(after.category), after.amount))
-        ||
-        // payment voided in this commit: paid moves down by its amount
-        (!isNew && get(paymentPath).data.status == 'ACTIVE' && after.status == 'VOID'
-          && paidMovedBy(paidKeyFor(after.category), 0 - after.amount))
-      );
+
+    // (a) Paid totals move only with the payment named in lastPaymentId being
+    // created (ACTIVE, +amount) or voided (ACTIVE → VOID, −amount) in this same
+    // commit; only that payment's obligation changes, staying within 0..obligation.
+    function paymentMovesPaid(orderId, d, old) {
+      let pmt = /databases/$(database)/documents/payments/$(d.lastPaymentId);
+      let after = getAfter(pmt).data;
+      let key = paidKeyFor(after.category);
+      let isVoid = exists(pmt);
+      let newPaid = d.paid[key];
+      return after.orderId == orderId
+        && (isVoid ? (get(pmt).data.status == 'ACTIVE' && after.status == 'VOID') : after.status == 'ACTIVE')
+        && d.paid.diff(old.paid).affectedKeys().hasOnly([key])
+        && newPaid == old.paid[key] + (isVoid ? 0 - after.amount : after.amount)
+        && newPaid >= 0
+        && newPaid <= obligationFor(d, key);
+    }
+
+    // (b) Audited correction: figures fully re-validated; parties unchanged;
+    // paid totals (unchanged) must still fit within the corrected obligations.
+    function validCorrection(d, old) {
+      let p = d.paid;
+      return d.buyer.id == old.buyer.id && d.seller.id == old.seller.id
+        && d.commission.id == old.commission.id && d.freight.id == old.freight.id
+        && d.paymentAgent.id == old.paymentAgent.id
+        && d.searchTokens is list && d.searchTokens.size() <= 120
+        && d.notes is string && d.notes.size() <= 500
+        && validReceipt(d.receipt, d.qtyKg, d.dispatchDate)
+        && validBuyerAndAgent(d)
+        && validCosts(d)
+        && p.buyer <= d.buyer.grossAmount
+        && p.seller <= d.seller.amount
+        && p.commission <= d.commission.amount
+        && p.freight <= d.freight.amount
+        && p.paymentAgent <= d.paymentAgent.balance;
+    }
+
+    // Each kind of update may change ONLY its own whitelisted fields. That alone
+    // keeps the number, counter, parties, rate decisions, creator, status
+    // (except cancellation) and paid totals (except via payments) immutable.
+    function validOrderUpdate(orderId, d, old) {
+      let ch = d.diff(old).affectedKeys();
+      return old.status == 'CONFIRMED'          // cancelled orders are final
+        && d.updatedBy == request.auth.uid
+        && (
+          (ch.hasOnly(['paid', 'lastPaymentId', 'updatedAt', 'updatedBy'])
+            && paymentMovesPaid(orderId, d, old))
+          ||
+          (ch.hasOnly(['status', 'cancelReason', 'version', 'updatedAt', 'updatedBy'])
+            && d.status == 'CANCELLED'
+            && old.paid == zeroPaid()
+            && d.version == old.version + 1
+            && isText(d.cancelReason, 3, 300)
+            && isAdmin())
+          ||
+          (ch.hasOnly(['dispatchDate', 'qtyKg', 'receipt', 'buyer', 'seller', 'commission', 'freight',
+                       'paymentAgent', 'notes', 'searchTokens', 'version', 'updatedAt', 'updatedBy'])
+            && d.version == old.version + 1
+            && validCorrection(d, old))
+        );
     }
 
     match /orders/{orderId} {
       allow read: if isActive();
-
-      allow create: if canOperate()
-        && incoming().keys().hasOnly(orderKeys())
-        && incoming().status == 'CONFIRMED'
-        && incoming().version == 1
-        && incoming().cancelReason == null
-        && incoming().lastPaymentId == null
-        && incoming().createdBy == uid() && incoming().updatedBy == uid()
-        && incoming().rateDecisions is list && incoming().rateDecisions.size() <= 6
-        && allPaidZero(incoming())
-        && validReceipt(incoming().receipt, incoming())
-        && validFinancials(incoming())
-        && validParties(incoming())
-        && validNumbering(incoming());
-
-      allow update: if canAccount()
-        && incoming().keys().hasOnly(orderKeys())
-        && unchanged(['orderNumber', 'seq', 'counterId', 'createdAt', 'createdBy',
-             'buyerId', 'sellerId', 'commissionAgentId', 'transporterId', 'paymentAgentId', 'rateDecisions'])
-        && incoming().updatedBy == uid()
-        && existing().status == 'CONFIRMED'   // cancelled orders are final
-        && (
-          // (a) a payment was recorded or voided: only paid totals move, backed by that payment
-          (incoming().status == 'CONFIRMED'
-            && changed().hasOnly(['paid', 'lastPaymentId', 'updatedAt', 'updatedBy'])
-            && validPaid(incoming())
-            && paidChangeBackedByPayment(orderId))
-          ||
-          // (b) audited correction: figures re-validated, paid untouched and still within obligations
-          (incoming().status == 'CONFIRMED'
-            && unchanged(['paid', 'lastPaymentId', 'cancelReason'])
-            && incoming().version == existing().version + 1
-            && validReceipt(incoming().receipt, incoming())
-            && validFinancials(incoming()))
-          ||
-          // (c) cancellation by an administrator, only when nothing has been paid
-          (isAdmin()
-            && incoming().status == 'CANCELLED'
-            && allPaidZero(existing())
-            && changed().hasOnly(['status', 'cancelReason', 'version', 'updatedAt', 'updatedBy'])
-            && incoming().version == existing().version + 1
-            && isText(incoming().cancelReason, 3, 300))
-        );
-
+      allow create: if canOperate() && validOrderCreate(request.resource.data);
+      allow update: if canAccount() && validOrderUpdate(orderId, request.resource.data, resource.data);
       allow delete: if false;
     }
 
@@ -451,7 +480,7 @@ service cloud.firestore {
         && incoming().keys().hasOnly(paymentKeys())
         && incoming().createdBy == uid() && incoming().updatedBy == uid()
         && incoming().status == 'ACTIVE' && incoming().voidReason == null
-        && intIn(incoming().amount, 1, maxPayment())
+        && intIn(incoming().amount, 1, 100000000000) // ≤ ₹100 crore
         && isISODate(incoming().date)
         && incoming().category in ['BUYER_RECEIPT', 'SELLER_PAYMENT', 'COMMISSION_PAYMENT',
              'TRANSPORTER_PAYMENT', 'PAYMENT_AGENT_SETTLEMENT', 'OTHER']
