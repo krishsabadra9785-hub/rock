@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, query, where, writeBatch, limit, orderBy, startAfter, serverTimestamp, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, writeBatch, limit, orderBy, startAfter, serverTimestamp, type QueryDocumentSnapshot, type Query, type QuerySnapshot, type DocumentData } from 'firebase/firestore';
 import { db } from '../firebase/app';
 import type { DateRange } from '../domain/dates';
 import {
@@ -74,10 +74,10 @@ export async function rebuildRollups(onProgress?: (msg: string) => void): Promis
 
   let cursor: QueryDocumentSnapshot | null = null;
   do {
-    const q = cursor
+    const q: Query<DocumentData> = cursor
       ? query(collection(db, COL.orders), where('status', '==', 'CONFIRMED'), orderBy('dispatchDate'), orderBy('seq'), startAfter(cursor), limit(500))
       : query(collection(db, COL.orders), where('status', '==', 'CONFIRMED'), orderBy('dispatchDate'), orderBy('seq'), limit(500));
-    const snap = await getDocs(q);
+    const snap: QuerySnapshot<DocumentData> = await getDocs(q);
     for (const d of snap.docs) deltas.push(orderContribution(toOrder(d.id, d.data())));
     orderCount += snap.size;
     onProgress?.(`Read ${orderCount} orders…`);
@@ -86,10 +86,10 @@ export async function rebuildRollups(onProgress?: (msg: string) => void): Promis
 
   cursor = null;
   do {
-    const q = cursor
+    const q: Query<DocumentData> = cursor
       ? query(collection(db, COL.payments), orderBy('date'), startAfter(cursor), limit(500))
       : query(collection(db, COL.payments), orderBy('date'), limit(500));
-    const snap = await getDocs(q);
+    const snap: QuerySnapshot<DocumentData> = await getDocs(q);
     for (const d of snap.docs) {
       const p = toPayment(d.id, d.data());
       if (p.status === 'ACTIVE') deltas.push(paymentContribution(p));
