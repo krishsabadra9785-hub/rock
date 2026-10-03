@@ -1,0 +1,196 @@
+rules_version = '2';
+
+// ROCK — Cloud Firestore security rules (Spark plan).
+//
+// Principles
+//  * Nothing is readable or writable without Firebase Authentication AND an
+//    active profile document users/{uid} (created by an administrator).
+//    Signing up alone grants NOTHING.
+//  * Roles: ADMIN, ACCOUNTS, OPERATIONS, VIEW_ONLY (see docs/SECURITY.md).
+//  * Financial records are never deleted. Orders are cancelled, payments voided.
+//  * Identity fields (createdBy, actorId, changedBy) must be the caller's uid.
+//  * No receipt images are stored in Firestore (V1 has no image storage).
+//
+// Keep src/domain/permissions.ts in sync with these rules.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function profilePath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function profile() { return get(profilePath()).data; }
+    function isActive() { return signedIn() && exists(profilePath()) && profile().active == true; }
+    function hasRole(roles) { return isActive() && profile().role in roles; }
+    function isAdmin() { return hasRole(['ADMIN']); }
+    function canOperate() { return hasRole(['ADMIN', 'ACCOUNTS', 'OPERATIONS']); }
+    function canAccount() { return hasRole(['ADMIN', 'ACCOUNTS']); }
+    function uid() { return request.auth.uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function changed() { return incoming().diff(existing()).affectedKeys(); }
+    function unchanged(keys) { return !changed().hasAny(keys); }
+    function isMoney(v) { return v is int && v >= 0; }
+    function isOptString(v, max) { return v == null || (v is string && v.size() <= max); }
+    function isISODate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+
+    // ---------- users (access control) ----------
+    match /users/{userId} {
+      allow read: if signedIn() && (uid() == userId || isAdmin());
+      // Admins grant/revoke access. The very first admin is created in the
+      // Firebase console (console writes bypass rules) — see README.
+      allow create: if isAdmin()
+        && incoming().role in ['ADMIN', 'ACCOUNTS', 'OPERATIONS', 'VIEW_ONLY']
+        && incoming().active is bool;
+      allow update: if (isAdmin()
+          && incoming().role in ['ADMIN', 'ACCOUNTS', 'OPERATIONS', 'VIEW_ONLY']
+          && incoming().active is bool
+          // an admin cannot lock themselves out
+          && (userId != uid() || (incoming().role == 'ADMIN' && incoming().active == true)))
+        || (isActive() && uid() == userId
+          && changed().hasOnly(['displayName', 'updatedAt', 'updatedBy'])
+          && incoming().displayName is string && incoming().displayName.size() <= 120);
+      allow delete: if false;
+    }
+
+    // PIN hash (never the PIN itself). Only the owner of the account.
+    match /userSecurity/{userId} {
+      allow read: if isActive() && uid() == userId;
+      allow write: if isActive() && uid() == userId
+        && incoming().keys().hasOnly(['pinHash', 'pinSalt', 'pinIterations', 'pinUpdatedAt'])
+        && incoming().pinHash is string && incoming().pinHash.size() <= 100
+        && incoming().pinSalt is string && incoming().pinSalt.size() <= 100
+        && incoming().pinIterations is int && incoming().pinIterations >= 100000;
+    }
+
+    // ---------- settings ----------
+    match /settings/{docId} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+    }
+
+    // ---------- master data ----------
+    match /parties/{partyId} {
+      allow read: if isActive();
+      allow create: if canOperate()
+        && incoming().type in ['BUYER', 'SELLER', 'COMMISSION_AGENT', 'TRANSPORTER', 'PAYMENT_AGENT']
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 120
+        && incoming().createdBy == uid()
+        && incoming().active == true;
+      allow update: if canOperate()
+        && unchanged(['type', 'code', 'createdAt', 'createdBy'])
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 120
+        && incoming().updatedBy == uid();
+      allow delete: if false; // deactivate instead
+    }
+
+    // Rate history is append-only.
+    match /rateHistory/{entryId} {
+      allow read: if isActive();
+      allow create: if canOperate()
+        && incoming().changedBy == uid()
+        && isMoney(incoming().newRate)
+        && incoming().partyType in ['BUYER', 'SELLER', 'COMMISSION_AGENT', 'TRANSPORTER', 'PAYMENT_AGENT'];
+      allow update, delete: if false;
+    }
+
+    // ---------- counters (order numbers, party codes) ----------
+    match /counters/{counterId} {
+      allow read: if isActive();
+      allow create: if canOperate() && incoming().seq == 1;
+      allow update: if canOperate() && incoming().seq == existing().seq + 1;
+      allow delete: if false;
+    }
+
+    // ---------- orders ----------
+    function validReceipt(r) {
+      return r.image.provider in ['NONE', 'FIREBASE_STORAGE']
+        && (r.image.provider != 'NONE' || r.image.ref == null)
+        && isOptString(r.ai.raw, 8000)
+        && r.netQtyKg is int && r.netQtyKg > 0;
+    }
+    function validFinancials(d) {
+      return d.qtyKg is int && d.qtyKg > 0 && d.qtyKg <= 1000000
+        && isISODate(d.dispatchDate)
+        && isMoney(d.buyer.baseAmount) && isMoney(d.buyer.gstAmount)
+        && d.buyer.grossAmount == d.buyer.baseAmount + d.buyer.gstAmount
+        && isMoney(d.seller.amount) && isMoney(d.commission.amount) && isMoney(d.freight.amount)
+        && isMoney(d.paymentAgent.deduction)
+        && d.paymentAgent.received == d.buyer.grossAmount
+        && d.paymentAgent.balance == d.paymentAgent.received - d.paymentAgent.deduction
+        && d.searchTokens is list && d.searchTokens.size() <= 120;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isActive();
+      allow create: if canOperate()
+        && incoming().status == 'CONFIRMED'
+        && incoming().createdBy == uid()
+        && incoming().version == 1
+        && incoming().orderNumber is string
+        && incoming().buyerId is string && incoming().sellerId is string
+        && incoming().paid.buyer == 0 && incoming().paid.seller == 0
+        && incoming().paid.commission == 0 && incoming().paid.freight == 0 && incoming().paid.paymentAgent == 0
+        && validReceipt(incoming().receipt)
+        && validFinancials(incoming());
+
+      // Identity, numbering and parties of an order never change.
+      function orderIdentityKept() {
+        return unchanged(['orderNumber', 'seq', 'createdAt', 'createdBy', 'buyerId', 'sellerId',
+          'commissionAgentId', 'transporterId', 'paymentAgentId', 'rateDecisions']);
+      }
+      allow update: if canAccount() && orderIdentityKept() && incoming().updatedBy == uid() && (
+        // (a) payment recorded/voided: only the paid totals move
+        (changed().hasOnly(['paid', 'updatedAt', 'updatedBy']) && existing().status == 'CONFIRMED')
+        // (b) audited correction of a confirmed order
+        || (existing().status == 'CONFIRMED' && incoming().status == 'CONFIRMED'
+            && unchanged(['paid'])
+            && incoming().version == existing().version + 1
+            && validReceipt(incoming().receipt) && validFinancials(incoming()))
+        // (c) cancellation (administrators), only with no payments
+        || (isAdmin() && existing().status == 'CONFIRMED' && incoming().status == 'CANCELLED'
+            && changed().hasOnly(['status', 'cancelReason', 'version', 'updatedAt', 'updatedBy'])
+            && incoming().cancelReason is string && incoming().cancelReason.size() >= 3)
+      );
+      allow delete: if false;
+    }
+
+    // ---------- payments ----------
+    match /payments/{paymentId} {
+      allow read: if isActive();
+      allow create: if canAccount()
+        && incoming().createdBy == uid()
+        && incoming().status == 'ACTIVE'
+        && incoming().amount is int && incoming().amount > 0
+        && isISODate(incoming().date)
+        && incoming().category in ['BUYER_RECEIPT', 'SELLER_PAYMENT', 'COMMISSION_PAYMENT',
+             'TRANSPORTER_PAYMENT', 'PAYMENT_AGENT_SETTLEMENT', 'OTHER']
+        && isOptString(incoming().notes, 500) && isOptString(incoming().reference, 80);
+      // Void only; nothing else about a payment can change.
+      allow update: if canAccount()
+        && existing().status == 'ACTIVE' && incoming().status == 'VOID'
+        && changed().hasOnly(['status', 'voidReason', 'updatedAt', 'updatedBy'])
+        && incoming().updatedBy == uid();
+      allow delete: if false;
+    }
+
+    // ---------- derived statistics ----------
+    match /rollups/{key} {
+      allow read: if isActive();
+      allow create, update: if canOperate() && incoming().kind in ['D', 'M'];
+      allow delete: if isAdmin(); // "Rebuild statistics"
+    }
+
+    // ---------- audit log (append-only) ----------
+    match /auditLogs/{entryId} {
+      allow read: if canAccount();
+      allow create: if isActive() && incoming().actorId == uid();
+      allow update, delete: if false;
+    }
+
+    // Everything else is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

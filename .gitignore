@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+tests/rules/node_modules/
+
+# Builds
+dist/
+dev-dist/
+coverage/
+*.tsbuildinfo
+
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*service-account*.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+credentials.json
+
+# Firebase local state
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+storage-debug.log*
+ui-debug.log*
+emulator-data/
+
+# Logs & OS clutter
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

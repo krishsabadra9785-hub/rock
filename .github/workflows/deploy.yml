@@ -1,0 +1,98 @@
+# Builds ROCK and publishes it to GitHub Pages:
+#   https://krishsabadra9785-hub.github.io/rock/
+#
+# Runs on every push to `main` (and can be run by hand from the Actions tab).
+# Pull requests are built and tested but NOT deployed.
+# If any step fails, nothing is deployed and the current live site stays as it is.
+name: Build and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # Firebase WEB config — not secret. Set these in:
+      # GitHub → repo → Settings → Secrets and variables → Actions → Variables
+      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
+      VITE_LOGIN_EMAIL_DOMAIN: ${{ vars.VITE_LOGIN_EMAIL_DOMAIN }}
+      VITE_RECAPTCHA_V3_SITE_KEY: ${{ vars.VITE_RECAPTCHA_V3_SITE_KEY }}
+      VITE_AI_MODEL: ${{ vars.VITE_AI_MODEL }}
+      VITE_USE_EMULATORS: 'false'
+      VITE_ENABLE_DEMO_TOOLS: 'false'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "::warning::package-lock.json not found — using npm install. Commit package-lock.json for reproducible builds."
+            npm install
+          fi
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Tests (including the 38.52 MT financial acceptance tests)
+        run: npm test
+
+      - name: Check Firebase configuration variables
+        if: github.event_name != 'pull_request'
+        run: |
+          missing=0
+          for v in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID VITE_FIREBASE_APP_ID; do
+            if [ -z "${!v}" ]; then echo "::error::Repository variable $v is not set (Settings → Secrets and variables → Actions → Variables)"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Build
+        run: npx vite build
+
+      - name: Upload site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
