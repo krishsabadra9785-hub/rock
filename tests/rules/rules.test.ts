@@ -469,3 +469,29 @@ describe('payment agent: orders saved under the obsolete model', () => {
     await assertSucceeds(updateDoc(doc(db, 'orders', 'O1'), { paymentAgent: { id: 'P1', name: 'PA', ratePaise: 100000, amount: 3852000 }, version: 2, updatedBy: 'admin' }));
   });
 });
+
+describe('statistics rebuild stays within Firestore rules limits', () => {
+  it('admin rebuild batch: 10 full statistics documents (replace) + audit', async () => {
+    const db = as('admin');
+    const b = writeBatch(db);
+    for (let d = 1; d <= 10; d++) {
+      const key = `2026-10-${String(d).padStart(2, '0')}`;
+      b.set(doc(db, 'rollups', `D-${key}`), {
+        kind: 'D', key,
+        totals: { orders: 1, qtyKg: 38520, buyerBase: 48150000, gst: 2407500, buyerGross: 50557500, seller: 37364400, commission: 2792700, freight: 3274200, paCharge: 3852000, paid: { PAYMENT_AGENT_SETTLEMENT: 1000000, BUYER_RECEIPT: 0 } },
+        parties: { PAYMENT_AGENT: { P1: { n: 1, qtyKg: 38520, amount: 3852000, paid: 1000000, base: 0, gst: 0 } }, BUYER: { B1: { n: 1, qtyKg: 38520, amount: 50557500, paid: 0, base: 48150000, gst: 2407500 } } },
+        updatedAt: serverTimestamp(),
+      });
+    }
+    b.set(doc(db, 'auditLogs', 'RB1'), { entityType: 'system', entityId: 'rollups', action: 'REBUILD', summary: 'Rebuilt statistics', changes: null, reason: null, actorId: 'admin', at: serverTimestamp() });
+    await assertSucceeds(b.commit());
+  });
+  it('admin can delete obsolete statistics documents in a rebuild; others cannot', async () => {
+    await seed(async (db) => setDoc(doc(db, 'rollups', 'M-2026-09'), { kind: 'M', key: '2026-09', totals: { paBalance: 1 } }));
+    await assertFails(deleteDoc(doc(as('acc'), 'rollups', 'M-2026-09')));
+    const db = as('admin');
+    const b = writeBatch(db);
+    b.delete(doc(db, 'rollups', 'M-2026-09'));
+    await assertSucceeds(b.commit());
+  });
+});

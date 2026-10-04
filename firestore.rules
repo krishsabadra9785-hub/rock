@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// ROCK — Cloud Firestore security rules (Spark plan).
+// Sabadra Minerals (codebase: ROCK) — Cloud Firestore security rules (Spark plan).
 //
 // The database independently enforces the business's financial integrity:
 //

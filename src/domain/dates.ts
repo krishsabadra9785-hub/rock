@@ -1,5 +1,5 @@
 /**
- * Dates in ROCK are business dates stored as ISO strings (YYYY-MM-DD) in the
+ * Dates in the app are business dates stored as ISO strings (YYYY-MM-DD) in the
  * user's local calendar. ISO strings sort lexicographically, so they can be
  * range-queried in Firestore without timezone surprises.
  */

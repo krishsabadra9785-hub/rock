@@ -48,7 +48,35 @@ export type PartyBuckets = Record<PartyType, Record<string, PartyBucket>>;
 export interface RollupData {
   totals: RollupTotals;
   parties: PartyBuckets;
+  /**
+   * Number of source documents written under the obsolete payment-agent model
+   * (set by sumRollups). When > 0 the payment-agent figures in this data are
+   * WRONG (they hold buyer money) and statistics must be rebuilt.
+   */
+  legacyDocs?: number;
 }
+
+/**
+ * Statistics documents are maintained with atomic increments, so documents
+ * written by the obsolete payment-agent model keep their old figures (agent
+ * bucket `amount` = buyer gross − commission) until rebuilt. They are
+ * recognisable by fields only the old model wrote.
+ */
+export function isLegacyRollupDoc(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false;
+  const r = raw as { totals?: Record<string, unknown>; parties?: Record<string, Record<string, Record<string, unknown>> | undefined> };
+  if (r.totals && ('paReceived' in r.totals || 'paBalance' in r.totals)) return true;
+  const pa = r.parties?.PAYMENT_AGENT;
+  if (pa) for (const b of Object.values(pa)) if (b && ('received' in b || 'charge' in b)) return true;
+  return false;
+}
+
+/**
+ * Documents per batch when rebuilding statistics. Firestore evaluates the
+ * security rules of every document in a batch against ONE request budget
+ * (1,000 expressions), so rebuild batches must stay small.
+ */
+export const REBUILD_BATCH_SIZE = 10;
 
 export interface RollupDelta extends RollupData {
   date: string;
@@ -212,7 +240,12 @@ export function normalizeRollup(raw: unknown): RollupData {
 
 export function sumRollups(docs: readonly unknown[]): RollupData {
   const acc = emptyRollup();
-  for (const d of docs) mergeInto(acc, normalizeRollup(d));
+  let legacy = 0;
+  for (const d of docs) {
+    if (isLegacyRollupDoc(d)) legacy++;
+    mergeInto(acc, normalizeRollup(d));
+  }
+  acc.legacyDocs = legacy;
   return acc;
 }
 

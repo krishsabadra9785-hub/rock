@@ -1,4 +1,4 @@
-# ROCK architecture
+# Sabadra Minerals architecture
 
 ## Constraints (V1)
 
@@ -111,3 +111,28 @@ Reading every order for every dashboard would exhaust the free read quota. Inste
 - **"Left after payouts"** on an order = buyer gross − seller − commission − freight − payment-agent commission. It still includes GST collected, which is owed separately.
 - **Order numbers** restart each calendar year: `ROCK-2026-000001`. The prefix is configurable; existing numbers never change.
 - **Drafts** are kept in the browser while the form is open (an auto-lock overlays rather than unmounts the form). Firestore orders are created only on confirmation.
+
+## Branding vs. technical identifiers
+
+The product is shown to users as **Sabadra Minerals** (`src/config/brand.ts`: sidebar, sign-in screens, page title, PWA name, messages, exported file names, backups). These identifiers keep the original `rock` name on purpose, because changing them would break the deployment or existing data:
+
+| Identifier | Why it stays |
+|---|---|
+| GitHub repository `krishsabadra9785-hub/rock`, Pages path `/rock/`, URL `…github.io/rock/`, Vite `base: '/rock/'`, PWA `start_url`/`scope` | Renaming moves the site URL; installed apps and bookmarks would break |
+| Firebase project `rock-e6719`, `.firebaserc`, auth domain | Project IDs cannot be renamed |
+| Login email domain `rock.local` | Existing users sign in as `<id>@rock.local`; changing it locks everyone out |
+| Order prefix `ROCK` → `ROCK-YYYY-######` | Keeps numbering continuous with existing orders, counters and search tokens; configurable in Settings → Business if ever wanted |
+| Firestore collections/documents, counters `orders-YYYY` | Existing data and security rules |
+| `localStorage` key `rock.pinAttempts.<uid>` | Renaming would silently reset PIN-attempt throttling |
+| npm package name `rock`, emulator project `demo-rock` | Internal tooling only, never shown |
+| Stored business name `ROCK` (older settings) | Read as "not customised" and shown as Sabadra Minerals |
+
+`tests/brand.test.ts` fails the build if any of these change unintentionally.
+
+## Payment-agent statistics repair (data created before the payable model)
+
+Statistics documents are kept up to date with atomic increments, so documents written by the obsolete payment-agent code kept its figures, with the agent's `amount` holding buyer gross − commission. New increments were added on top of them. Order documents and ledgers were always correct; only these summaries were wrong.
+
+- **Detection:** `isLegacyRollupDoc` recognises old-format documents by fields only the old code wrote (`totals.paReceived`, `totals.paBalance`, agent bucket `received`/`charge`). Affected pages show a warning, and **Check figures** reports them.
+- **Repair:** **Settings → Data → Repair Payment Agent figures** upgrades old orders, then recomputes every statistics document from orders and active payments. It writes each document as a full replacement, which removes all obsolete fields, and then runs Check figures. No financial value is typed in by hand. It is safe to repeat.
+- **Batch size:** rebuild writes 10 documents per batch, because every document's security rules share one request's expression budget.

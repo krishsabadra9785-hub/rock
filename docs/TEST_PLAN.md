@@ -1,4 +1,4 @@
-# ROCK test plan
+# Sabadra Minerals test plan
 
 ## 1. Automated tests (`npm test`)
 

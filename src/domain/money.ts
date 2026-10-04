@@ -1,7 +1,7 @@
 /**
  * Money & quantity primitives.
  *
- * ROCK never does financial arithmetic with floating-point rupees.
+ * The app never does financial arithmetic with floating-point rupees.
  *
  *  - Money is stored as an integer number of PAISE   (₹1 = 100 paise).
  *  - Quantity is stored as an integer number of KG    (1 MT = 1000 kg), which

@@ -1,4 +1,4 @@
-# ROCK security model
+# Sabadra Minerals security model
 
 ## What protects the data
 
@@ -8,7 +8,7 @@
    - require an **active `users/{uid}` profile** created by an administrator — self sign-up grants nothing;
    - role checks per operation (matrix below);
    - immutable financial history: no deletes; orders cancel, payments void; identity fields must equal the caller.
-3. **App Check (reCAPTCHA v3)** rejects requests that don't come from the genuine ROCK site once enforced, protecting free quotas (especially Gemini) from abuse.
+3. **App Check (reCAPTCHA v3)** rejects requests that don't come from the genuine Sabadra Minerals site once enforced, protecting free quotas (especially Gemini) from abuse.
 4. **No secrets in the repository.** The Firebase web config is public by design. The Gemini key is managed by Firebase AI Logic inside the project and never appears in code. `.env*` files are git-ignored. An automated test fails the build if a private key or service-account JSON appears in `src/`.
 
 ## Financial invariants and where each is enforced
@@ -107,7 +107,7 @@ Requirements: Login-ID + PIN experience, no plaintext PIN anywhere, no weakening
 
 ## Before going live checklist
 
-- [ ] `firestore.rules` published (Rules tab shows the ROCK header comment)
+- [ ] `firestore.rules` published (Rules tab shows the Sabadra Minerals header comment)
 - [ ] First admin `users/{uid}` created; no other unexpected `users` docs
 - [ ] Authentication → Authorized domains contains `krishsabadra9785-hub.github.io`
 - [ ] (If available) self sign-up disabled

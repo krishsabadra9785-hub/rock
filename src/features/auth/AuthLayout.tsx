@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import type { ReactNode } from 'react';
 
 /** Layered strata — the visual signature of the sign-in screens. */
@@ -17,7 +18,11 @@ export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="auth-screen">
       <div className="auth-art">
-        <div className="wordmark">ROCK</div>
+        <div className="wordmark" aria-label={APP_NAME}>
+          Sabadra
+          <br />
+          Minerals
+        </div>
         <p>Orders, ledgers and payments for your trading business — every rupee traced from buyer to payout.</p>
         <Strata />
       </div>

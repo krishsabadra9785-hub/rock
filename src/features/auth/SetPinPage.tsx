@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import { useState } from 'react';
 import { Button, Notice } from '../../components/ui';
 import { validatePin } from '../../domain/validation';
@@ -48,7 +49,7 @@ export function SetPinPage() {
       <div style={{ textAlign: 'center' }}>
         <h1>{first ? 'Enter the PIN again' : 'Create a 4-digit PIN'}</h1>
         <p className="muted small" style={{ marginTop: 4 }}>
-          You'll use this PIN to unlock ROCK on your devices. Your password is still needed every few weeks and for security changes.
+          You'll use this PIN to unlock {APP_NAME} on your devices. Your password is still needed every few weeks and for security changes.
         </p>
       </div>
       <PinPad onComplete={onComplete} disabled={busy} shake={shake} />

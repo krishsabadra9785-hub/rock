@@ -1,3 +1,4 @@
+import { APP_FILE_PREFIX } from '../../config/brand';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DataTable } from '../../components/DataTable';
@@ -103,7 +104,7 @@ export default function ReportsPage() {
     }
   };
 
-  const fileBase = `rock-${report}-${report === 'outstanding' ? 'today' : `${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}`}`;
+  const fileBase = `${APP_FILE_PREFIX}-${report}-${report === 'outstanding' ? 'today' : `${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}`}`;
   const download = () => {
     if (!loaded) return;
     if (loaded.kind === 'orders') downloadCsv(`${fileBase}.csv`, loaded.rows, loaded.report === 'orders' ? orderExportColumns() : ledgerColumns(loaded.report as LedgerKind));

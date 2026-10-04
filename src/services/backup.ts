@@ -1,3 +1,4 @@
+import { APP_NAME } from '../config/brand';
 import { collection, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/app';
 import { COL } from './firestore';
@@ -25,6 +26,6 @@ export async function exportAllData(onProgress?: (msg: string) => void): Promise
     const snap = await getDocs(collection(db, name));
     out[name] = Object.fromEntries(snap.docs.map((d) => [d.id, plain(d.data())]));
   }
-  const payload = { app: 'ROCK', format: 1, exportedAt: new Date().toISOString(), collections: out };
+  const payload = { app: APP_NAME, format: 1, exportedAt: new Date().toISOString(), collections: out };
   return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
 }

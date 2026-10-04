@@ -1,6 +1,6 @@
-# ROCK
+# Sabadra Minerals
 
-ROCK is a private business app for a trading business that buys bulk material from **sellers**, sells it to **buyers**, and pays **commission agents**, **transporters** and a **payment agent** on every truck. It records each order from the weighbridge slip, works out every amount automatically, tracks every payment, and shows dashboards, ledgers and reports.
+Sabadra Minerals is a private business app for a trading business that buys bulk material from **sellers**, sells it to **buyers**, and pays **commission agents**, **transporters** and a **payment agent** on every truck. It records each order from the weighbridge slip, works out every amount automatically, tracks every payment, and shows dashboards, ledgers and reports.
 
 **Live address (after setup):** https://krishsabadra9785-hub.github.io/rock/
 
@@ -10,16 +10,16 @@ It costs nothing to run: the website is hosted free on **GitHub Pages**, and dat
 
 ## Contents
 
-1. [What ROCK does](#1-what-rock-does)
+1. [What Sabadra Minerals does](#1-what-rock-does)
 2. [How it is built](#2-how-it-is-built)
 3. [One-time setup: Firebase](#3-one-time-setup-firebase)
 4. [One-time setup: your computer](#4-one-time-setup-your-computer)
-5. [Run ROCK on your computer](#5-run-rock-on-your-computer)
+5. [Run Sabadra Minerals on your computer](#5-run-rock-on-your-computer)
 6. [Test and build](#6-test-and-build)
 7. [Publish on GitHub Pages](#7-publish-on-github-pages)
 8. [Create the first administrator](#8-create-the-first-administrator)
 9. [How login and the PIN work](#9-how-login-and-the-pin-work)
-10. [Updating ROCK later](#10-updating-rock-later)
+10. [Updating Sabadra Minerals later](#10-updating-rock-later)
 11. [Adding employees](#11-adding-employees)
 12. [Backups](#12-backups)
 13. [Free-plan limits](#13-free-plan-limits)
@@ -28,16 +28,16 @@ It costs nothing to run: the website is hosted free on **GitHub Pages**, and dat
 
 ---
 
-## 1. What ROCK does
+## 1. What Sabadra Minerals does
 
-- **Create order**: photograph the weighbridge slip or challan, and ROCK reads net quantity, driver, phone, vehicle, date, slip number and destination with Google's Gemini AI. You check and correct every field, then pick the buyer, seller, agent, transporter and payment agent. Rates fill in automatically.
+- **Create order**: photograph the weighbridge slip or challan, and Sabadra Minerals reads net quantity, driver, phone, vehicle, date, slip number and destination with Google's Gemini AI. You check and correct every field, then pick the buyer, seller, agent, transporter and payment agent. Rates fill in automatically.
 - **Calculates everything**: buyer amount and GST (what the buyer owes us), and what we owe the seller, commission agent, transporter and payment agent. Example for 38.52 MT: the buyer owes us ₹5,05,575 incl. GST, and we owe the payment agent its commission of ₹38,520 (38.52 × ₹1,000).
 - **Remembers rates**: when you change a rate on an order you choose *This order only* or *New default going forward*. Old orders never change.
 - **Payments**: record any number of part payments per order; outstanding balances update automatically.
 - **Dashboards, ledgers, reports**: by day, week, month, financial year (April–March by default), custom range or all time. CSV export (opens in Excel) and print / save as PDF.
 - **Works on phones**: install it to the home screen like an app.
 
-**Receipt images are not kept.** To stay on the free plan, ROCK reads the photo on your device and then discards it. Only the details you confirmed are saved. (The code is ready for permanent image storage later if you ever choose to enable a paid storage plan.)
+**Receipt images are not kept.** To stay on the free plan, Sabadra Minerals reads the photo on your device and then discards it. Only the details you confirmed are saved. (The code is ready for permanent image storage later if you ever choose to enable a paid storage plan.)
 
 ## 2. How it is built
 
@@ -92,7 +92,7 @@ Create your own account now:
 - Easiest: open **Firestore Database → Rules**, delete everything in the editor, paste the entire contents of the file [`firestore.rules`](firestore.rules) from this project, and click **Publish**.
 - Or with the command line (also publishes the indexes — see step 4.4): `npm run deploy:rules`.
 
-**Indexes:** ROCK needs some search indexes. Deploy them with `npm run deploy:rules` (step 4.4). If you skip that, the app shows an error the first time a list needs an index; the browser console then shows a link that creates it in one click. Indexes take a few minutes to build.
+**Indexes:** Sabadra Minerals needs some search indexes. Deploy them with `npm run deploy:rules` (step 4.4). If you skip that, the app shows an error the first time a list needs an index; the browser console then shows a link that creates it in one click. Indexes take a few minutes to build.
 
 ### 3.4 AI receipt reading (Firebase AI Logic, free tier)
 
@@ -101,13 +101,13 @@ Create your own account now:
 3. Choose **Gemini Developer API** (the one that works on the Spark/no-cost plan). **Do not choose Vertex AI Gemini API** — it needs billing.
 4. Follow the prompts to enable the required APIs. Firebase creates and manages an API key for this inside your project — you don't need to copy it anywhere, and it must never be put in the code.
 
-ROCK uses the model `gemini-2.5-flash` by default. If Google retires it or the free quota is too small, change it later in **ROCK → Settings → AI receipt reading** (for example to `gemini-2.5-flash-lite`). Use only models listed as available on the Gemini Developer API free tier.
+Sabadra Minerals uses the model `gemini-2.5-flash` by default. If Google retires it or the free quota is too small, change it later in **Sabadra Minerals → Settings → AI receipt reading** (for example to `gemini-2.5-flash-lite`). Use only models listed as available on the Gemini Developer API free tier.
 
-If the free quota runs out, ROCK says "AI usage limit reached for now" and you type the details yourself. It never switches to a paid service.
+If the free quota runs out, Sabadra Minerals says "AI usage limit reached for now" and you type the details yourself. It never switches to a paid service.
 
 ### 3.5 App Check (protects your free quotas from abuse)
 
-App Check proves requests come from your real ROCK website. It uses Google reCAPTCHA v3, which is free and needs no billing.
+App Check proves requests come from your real Sabadra Minerals website. It uses Google reCAPTCHA v3, which is free and needs no billing.
 
 1. Go to https://www.google.com/recaptcha/admin/create.
    - Label: `ROCK`
@@ -116,7 +116,7 @@ App Check proves requests come from your real ROCK website. It uses Google reCAP
    - Submit. You get a **site key** and a **secret key**.
 2. Firebase console → **App Check → Apps** → your web app → **reCAPTCHA** → paste the **secret key** → **Save**.
 3. Keep the **site key**: it goes in `VITE_RECAPTCHA_V3_SITE_KEY` (steps 4 and 7). The site key is public.
-4. After ROCK has been live for a day, open **App Check → APIs**. When the metrics show nearly all requests as *verified*, click **Enforce** for **Firebase AI Logic** first, then **Cloud Firestore**, then **Authentication**. Enforcing blocks requests that don't come from your app.
+4. After Sabadra Minerals has been live for a day, open **App Check → APIs**. When the metrics show nearly all requests as *verified*, click **Enforce** for **Firebase AI Logic** first, then **Cloud Firestore**, then **Authentication**. Enforcing blocks requests that don't come from your app.
 
 **For local development:** when App Check is on and you run `npm run dev`, the browser console prints *"App Check debug token: …"*. Copy it to **App Check → Apps → ⋮ → Manage debug tokens → Add**. Never share debug tokens.
 
@@ -124,7 +124,7 @@ App Check proves requests come from your real ROCK website. It uses Google reCAP
 
 ## 4. One-time setup: your computer
 
-You need this only to run ROCK locally or to publish the rules from the command line. Publishing the website itself happens automatically on GitHub.
+You need this only to run Sabadra Minerals locally or to publish the rules from the command line. Publishing the website itself happens automatically on GitHub.
 
 ### 4.1 Install tools
 
@@ -169,7 +169,7 @@ npm run deploy:rules
 
 The first command opens a browser to sign in with your Google account. The project `rock-e6719` is already selected by the `.firebaserc` file. This works on the free Spark plan.
 
-## 5. Run ROCK on your computer
+## 5. Run Sabadra Minerals on your computer
 
 ```bash
 npm run dev
@@ -236,7 +236,7 @@ From the project folder:
 
 ```bash
 git add .
-git commit -m "ROCK V1"
+git commit -m "Sabadra Minerals V1"
 git branch -M main
 git remote add origin https://github.com/krishsabadra9785-hub/rock.git   # skip if it says "remote origin already exists"
 git push -u origin main
@@ -248,11 +248,11 @@ Repository → **Actions** tab → **Build and deploy to GitHub Pages**. A yello
 
 The workflow installs, type-checks, runs every test, builds, and only then publishes. **If any step fails, nothing is published and the current live site keeps working.**
 
-Pages inside ROCK have addresses like `https://krishsabadra9785-hub.github.io/rock/#/orders`. The `#` is intentional: it lets you refresh any page without errors on GitHub Pages.
+Pages inside Sabadra Minerals have addresses like `https://krishsabadra9785-hub.github.io/rock/#/orders`. The `#` is intentional: it lets you refresh any page without errors on GitHub Pages.
 
 ## 8. Create the first administrator
 
-The first time you sign in, ROCK shows "Your account isn't set up in ROCK yet" with your **User UID**. That's expected — give yourself access:
+The first time you sign in, Sabadra Minerals shows "Your account isn't set up in Sabadra Minerals yet" with your **User UID**. That's expected — give yourself access:
 
 1. Firebase console → **Firestore Database → Data → + Start collection**.
 2. Collection ID: `users` → Next.
@@ -267,9 +267,9 @@ The first time you sign in, ROCK shows "Your account isn't set up in ROCK yet" w
 | `active` | boolean | `true` |
 
    Add **only** these four fields. The security rules reject profile documents with extra fields when an administrator edits them later.
-5. Save, go back to ROCK, sign in again with Login ID `owner` and your password, and create your 4-digit PIN.
+5. Save, go back to Sabadra Minerals, sign in again with Login ID `owner` and your password, and create your 4-digit PIN.
 
-Then, inside ROCK:
+Then, inside Sabadra Minerals:
 
 1. **Settings → Business**: business name, default GST, financial-year start, order prefix.
 2. Add your **Payment agent**, **Commission agents**, **Transporters**, **Sellers** and **Buyers** with their default rates (buyers can have a default agent, transporter and payment agent).
@@ -278,20 +278,20 @@ Then, inside ROCK:
 
 ## 9. How login and the PIN work
 
-Firebase only supports secure passwords, not bare 4-digit PINs, and a website on free static hosting has no private server to check a PIN safely. So ROCK uses the safest arrangement possible on the free plan:
+Firebase only supports secure passwords, not bare 4-digit PINs, and a website on free static hosting has no private server to check a PIN safely. So Sabadra Minerals uses the safest arrangement possible on the free plan:
 
 1. **First time on a device:** sign in with your **Login ID + password** (real Firebase Authentication).
-2. **Create a 4-digit PIN.** ROCK stores only a salted, slow hash of it (PBKDF2-SHA-256, 310,000 rounds) in your private Firestore record. The PIN itself is never stored anywhere.
-3. **After that:** opening ROCK on that device asks only for the PIN. It also locks after 5 minutes idle (configurable).
+2. **Create a 4-digit PIN.** Sabadra Minerals stores only a salted, slow hash of it (PBKDF2-SHA-256, 310,000 rounds) in your private Firestore record. The PIN itself is never stored anywhere.
+3. **After that:** opening Sabadra Minerals on that device asks only for the PIN. It also locks after 5 minutes idle (configurable).
 4. **Limits:** after 3 wrong PINs there's a 30-second wait; after 5 the device is signed out and the password is required. The password is also required every 30 days (configurable), and for changing your PIN or password.
 5. **What actually protects the data** is your Firebase login plus the security rules. Every database request is checked against your role. The PIN is a quick lock for a device you have already signed in on, like a banking app's PIN — it is not a substitute for keeping your device and password safe.
 
 Details: [docs/SECURITY.md](docs/SECURITY.md).
 
 **Forgot the PIN?** Tap "Use password instead", sign in with your password, and set a new PIN in Settings.
-**Forgot the password?** `@rock.local` addresses can't receive reset emails, so an administrator deletes the user in Firebase console → Authentication → Users and adds them again with the same email and a new password. That gives a new User UID: grant it access in ROCK → Settings → Users (or create the `users/<new UID>` document as in step 8), and set the old entry to inactive. Their orders and history are unaffected.
+**Forgot the password?** `@rock.local` addresses can't receive reset emails, so an administrator deletes the user in Firebase console → Authentication → Users and adds them again with the same email and a new password. That gives a new User UID: grant it access in Sabadra Minerals → Settings → Users (or create the `users/<new UID>` document as in step 8), and set the old entry to inactive. Their orders and history are unaffected.
 
-## 10. Updating ROCK later
+## 10. Updating Sabadra Minerals later
 
 Change files, then:
 
@@ -302,7 +302,7 @@ git commit -m "Describe the change"
 git push
 ```
 
-GitHub Actions publishes the new version automatically. People using ROCK see "A new version of ROCK is available — Reload".
+GitHub Actions publishes the new version automatically. People using Sabadra Minerals see "A new version of Sabadra Minerals is available — Reload".
 
 If `firestore.rules` or `firestore.indexes.json` changed, publish them too: `npm run deploy:rules` (or paste the rules in the console).
 
@@ -310,7 +310,7 @@ If `firestore.rules` or `firestore.indexes.json` changed, publish them too: `npm
 
 1. Firebase console → Authentication → **Add user**: `ramesh@rock.local` with a temporary password.
 2. Copy their **User UID**.
-3. ROCK → **Settings → Users** → paste UID, Login ID `ramesh`, name, role → **Save access**.
+3. Sabadra Minerals → **Settings → Users** → paste UID, Login ID `ramesh`, name, role → **Save access**.
 
 | Role | Can do |
 |---|---|
@@ -323,7 +323,7 @@ To remove access, untick **Access active**. Their history is kept.
 
 ## 12. Backups
 
-**ROCK → Settings → Data → Download backup** saves every business record as a JSON file. Do this regularly (e.g. weekly) and keep copies in two places. It contains confidential data, so store it safely.
+**Sabadra Minerals → Settings → Data → Download backup** saves every business record as a JSON file. Do this regularly (e.g. weekly) and keep copies in two places. It contains confidential data, so store it safely.
 
 (Firestore's automatic scheduled backups require the paid Blaze plan, so they aren't used.)
 
@@ -331,11 +331,11 @@ To remove access, untick **Access active**. Their history is kept.
 
 | Service | Free allowance (approximate; Google may change it) | What happens if exceeded |
 |---|---|---|
-| Firestore | 50,000 reads, 20,000 writes per day; 1 GiB stored | Requests fail until the daily reset; ROCK shows "Usage limit reached for today". Nothing is corrupted: each save is all-or-nothing. |
-| Gemini (AI Logic) | Free-tier requests per minute/day depend on the model | ROCK shows "AI temporarily unavailable" and you type the details manually. |
+| Firestore | 50,000 reads, 20,000 writes per day; 1 GiB stored | Requests fail until the daily reset; Sabadra Minerals shows "Usage limit reached for today". Nothing is corrupted: each save is all-or-nothing. |
+| Gemini (AI Logic) | Free-tier requests per minute/day depend on the model | Sabadra Minerals shows "AI temporarily unavailable" and you type the details manually. |
 | GitHub Pages | Generous for a private business app | — |
 
-ROCK is designed to read little data. For example, dashboards read small daily and monthly summaries instead of every order.
+Sabadra Minerals is designed to read little data. For example, dashboards read small daily and monthly summaries instead of every order.
 
 ## 14. Troubleshooting
 
@@ -358,7 +358,7 @@ A failed run never takes the live site down — the previous version stays onlin
 
 - Use the full address including **`/rock/`**: https://krishsabadra9785-hub.github.io/rock/
 - "Firebase isn't configured": the repository variables are missing or misspelled. Fix step 7.2 and re-run the workflow.
-- After a new deployment, wait a minute and refresh. If an old version persists, close all ROCK tabs and reopen.
+- After a new deployment, wait a minute and refresh. If an old version persists, close all Sabadra Minerals tabs and reopen.
 
 ### Login problems
 
@@ -366,7 +366,7 @@ A failed run never takes the live site down — the previous version stays onlin
 |---|---|
 | "Login ID or password is incorrect" | Check the Login ID (it becomes `<id>@rock.local`) and password |
 | `auth/unauthorized-domain` | Add `krishsabadra9785-hub.github.io` to Authentication → Authorized domains (3.2) |
-| "Your account isn't set up in ROCK yet" | Create the `users/<UID>` document (step 8) with `active` = `true` |
+| "Your account isn't set up in Sabadra Minerals yet" | Create the `users/<UID>` document (step 8) with `active` = `true` |
 | "Too many attempts" | Wait a few minutes; Firebase temporarily blocks repeated failures |
 
 ### "You do not have permission to do this"
@@ -394,7 +394,7 @@ You can always create orders manually.
 
 ### Figures on the dashboard look wrong
 
-**Orders saved before the payment-agent change.** If any exist, run **Settings → Data → Upgrade old records** once, then **Rebuild statistics**. Both are safe to repeat.
+**Payment Agent totals look far too high (e.g. an average rate far above the agent's ₹/MT)?** The summaries were saved under the old Payment Agent model. Sign in as an administrator and run **Settings → Data → Repair Payment Agent figures**. It recomputes every summary from the orders and payments (no manual figures) and ends with a check that should say "all figures match".
 
 **Settings → Data → Check figures** recalculates every total from the original orders and active payments and reports any difference without changing anything. **Rebuild statistics** then repairs dashboard summaries. Running *Check figures* once a month is a good habit.
 
@@ -425,4 +425,4 @@ rock/
 
 ## License
 
-Copyright © the ROCK owner. All rights reserved. This repository is public for hosting convenience only; no permission is granted to use, copy or modify the code without the owner's written consent. See [LICENSE](LICENSE).
+Copyright © the Sabadra Minerals owner. All rights reserved. This repository is public for hosting convenience only; no permission is granted to use, copy or modify the code without the owner's written consent. See [LICENSE](LICENSE).

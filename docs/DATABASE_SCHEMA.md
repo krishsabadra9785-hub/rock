@@ -34,7 +34,7 @@ Security summary per collection is in the last column; the authoritative source 
 ## `settings/app`
 | Field | Type | Default |
 |---|---|---|
-| businessName | string | `ROCK` |
+| businessName | string | `Sabadra Minerals` (a stored legacy value `ROCK` is shown as Sabadra Minerals) |
 | orderPrefix | string | `ROCK` |
 | defaultGstBp | int | 500 |
 | fyStartMonth | int 1–12 | 4 (April) |

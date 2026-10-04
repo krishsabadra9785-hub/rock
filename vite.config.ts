@@ -20,9 +20,9 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         id: BASE_PATH,
-        name: 'ROCK',
-        short_name: 'ROCK',
-        description: 'Orders, ledgers and payments for your trading business.',
+        name: 'Sabadra Minerals',
+        short_name: 'Sabadra Minerals',
+        description: 'Sabadra Minerals — orders, ledgers and payments.',
         theme_color: '#1D2A2F',
         background_color: '#F3F5F4',
         display: 'standalone',

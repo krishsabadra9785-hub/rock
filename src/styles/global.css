@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ROCK design system
+   Sabadra Minerals design system
    Granite + paper neutrals, quarry green for action, haul-yellow reserved
    for the money-flow line. Figures set in Plex Sans Condensed, tabular.
    ========================================================================== */
@@ -163,8 +163,9 @@ a:hover {
   color: #fff;
   font-family: var(--font-fig);
   font-weight: 600;
-  font-size: 1.35rem;
-  letter-spacing: 0.08em;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
 }
 .brand-mark {
   width: 28px;
@@ -295,7 +296,9 @@ a:hover {
     gap: 8px;
     font-family: var(--font-fig);
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    font-size: 0.95rem;
   }
   .topbar-user {
     display: none;
@@ -1062,9 +1065,9 @@ table.data tr.is-void td {
 .auth-art .wordmark {
   font-family: var(--font-fig);
   font-weight: 600;
-  font-size: clamp(4rem, 11vw, 9rem);
-  letter-spacing: 0.06em;
-  line-height: 0.9;
+  font-size: clamp(2.6rem, 6.5vw, 5.5rem);
+  letter-spacing: 0.02em;
+  line-height: 0.95;
   color: #fff;
 }
 .auth-art .strata {

@@ -1,3 +1,4 @@
+import { APP_NAME } from '../config/brand';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BrandMark, Icon, type IconName } from '../components/Icon';
@@ -60,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="sidebar" aria-label="Main navigation">
         <div className="brand">
-          <BrandMark /> ROCK
+          <BrandMark /> {APP_NAME}
         </div>
         <NavLink to="/orders/new" className="nav-link nav-cta">
           <Icon name="plus" /> Create order
@@ -77,7 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </nav>
         <div className="sidebar-foot">
-          {settings.businessName !== 'ROCK' && <div style={{ color: '#dfe7e4' }}>{settings.businessName}</div>}
+          {settings.businessName !== APP_NAME && <div style={{ color: '#dfe7e4' }}>{settings.businessName}</div>}
           {profile && (
             <div>
               {profile.displayName} ({ROLE_LABELS[profile.role]})
@@ -89,7 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="main">
         <header className="topbar">
           <div className="mobile-brand">
-            <BrandMark size={22} /> ROCK
+            <BrandMark size={22} /> {APP_NAME}
           </div>
           <form className="topbar-search" role="search" onSubmit={onSearch}>
             <Icon name="search" size={16} />

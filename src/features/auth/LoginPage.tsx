@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import { useState, type FormEvent } from 'react';
 import { Button, Field, Notice, TextInput } from '../../components/ui';
 import { friendlyError } from '../../services/errors';
@@ -29,7 +30,7 @@ export function LoginPage() {
       <div>
         <h1>Sign in</h1>
         <p className="muted small" style={{ marginTop: 4 }}>
-          Use your password once on this device. After that, your 4-digit PIN unlocks ROCK.
+          Use your password once on this device. After that, your 4-digit PIN unlocks {APP_NAME}.
         </p>
       </div>
       {notice && <Notice tone="info">{notice}</Notice>}

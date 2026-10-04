@@ -1,3 +1,4 @@
+import { StaleStatisticsNotice } from '../../components/StaleStatisticsNotice';
 import { useState } from 'react';
 import { DataTable } from '../../components/DataTable';
 import { DateFilter } from '../../components/DateFilter';
@@ -65,6 +66,7 @@ export default function PaymentAgentPage() {
       </div>
       <DateFilter state={dr} />
       {period.error && <ErrorNotice error={period.error} onRetry={period.reload} />}
+      <StaleStatisticsNotice data={[period.data, lifetime.data]} />
       <div className="figures">
         <Figure lead label="Payment agent charges" note="Commission on orders in period" value={p ? formatINR(p.amount) : sk} />
         <Figure label="Total quantity" value={p ? formatQty(p.qtyKg) : sk} />

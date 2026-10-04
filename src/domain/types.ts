@@ -259,7 +259,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  businessName: 'ROCK',
+  businessName: 'Sabadra Minerals',
   orderPrefix: 'ROCK',
   defaultGstBp: 500,
   fyStartMonth: 4,

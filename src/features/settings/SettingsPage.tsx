@@ -1,3 +1,4 @@
+import { APP_FILE_PREFIX, APP_NAME } from '../../config/brand';
 import { useState } from 'react';
 import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Tabs, TextInput, AmountInput } from '../../components/ui';
 import { PartySelect } from '../../components/PartySelect';
@@ -105,7 +106,7 @@ function SecurityTab() {
         </div>
       </Panel>
       <Notice tone="info">
-        ROCK locks after {settings.autoLockMinutes} minutes without activity and asks for your password every {settings.maxSessionDays} days. Five wrong PINs sign this device out. Your PIN is never stored, only a salted hash of it.
+        {APP_NAME} locks after {settings.autoLockMinutes} minutes without activity and asks for your password every {settings.maxSessionDays} days. Five wrong PINs sign this device out. Your PIN is never stored, only a salted hash of it.
       </Notice>
     </div>
   );
@@ -131,7 +132,7 @@ function BusinessTab() {
       () => {
         if (gst === null || gst > 2800) throw new Error('Enter a valid default GST %');
         return saveSettings({
-          businessName: f.businessName.trim() || 'ROCK',
+          businessName: f.businessName.trim() || APP_NAME,
           orderPrefix: f.orderPrefix,
           defaultGstBp: gst,
           fyStartMonth: f.fyStartMonth,
@@ -234,7 +235,7 @@ function AiTab() {
           App Check does not affect receipt reading. Enabling it later (README step 3.5) protects your free AI quota from misuse by other websites.
         </p>
       </Panel>
-      <Notice tone="info">If the free AI quota runs out or reading fails, ROCK says so and you type the details yourself. It never switches to a paid service.</Notice>
+      <Notice tone="info">If the free AI quota runs out or reading fails, the app says so and you type the details yourself. It never switches to a paid service.</Notice>
     </div>
   );
 }
@@ -293,7 +294,7 @@ function DataTab() {
     <div className="stack">
       <Panel title="Backup">
         <p className="muted" style={{ marginBottom: 12 }}>Downloads every business record (parties, orders, payments, rate history, settings) as a JSON file. Keep it somewhere safe; it contains confidential data.</p>
-        <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`rock-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
+        <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`${APP_FILE_PREFIX}-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
       </Panel>
       <Panel title="Check figures">
         <p className="muted" style={{ marginBottom: 12 }}>Recomputes every total from the original orders and active payments and compares it with what is stored. Changes nothing.</p>
@@ -304,14 +305,46 @@ function DataTab() {
             void run('check', async () => {
               const r = await checkIntegrity(setProgress);
               setProgress(
-                r.paidMismatches.length === 0 && r.rollupMismatches.length === 0
+                r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0
                   ? `All figures match: ${r.orders} orders, ${r.payments} payments checked.`
-                  : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents. Rebuild statistics fixes dashboard figures; contact support for order paid totals.`,
+                  : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents` +
+                      (r.legacyDocs ? ` (${r.legacyDocs} still in the old Payment Agent format)` : '') +
+                      '. "Repair Payment Agent figures" or "Rebuild statistics" fixes summary figures; contact support for order paid totals.',
               );
             })
           }
         >
           Check figures
+        </Button>
+      </Panel>
+      <Panel title="Repair Payment Agent figures">
+        <p className="muted" style={{ marginBottom: 12 }}>
+          Fixes summary figures saved under the old Payment Agent model. It (1) upgrades old orders to the current format, (2) recalculates every summary
+          from the original orders and active payments, then (3) checks the result. No amounts are typed in; everything is recomputed. Safe to run more than once.
+        </p>
+        <Button
+          variant="primary"
+          icon="refresh"
+          busy={busy === 'repair'}
+          onClick={() =>
+            void run(
+              'repair',
+              async () => {
+                const up = await upgradeLegacyPaymentAgentOrders(setProgress);
+                await rebuildRollups(setProgress);
+                const r = await checkIntegrity(setProgress);
+                const ok = r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0;
+                setProgress(
+                  `Upgraded ${up.upgraded.length} old orders. Statistics rebuilt from ${r.orders} orders and ${r.payments} payments. ` +
+                    (ok ? 'Check: all figures match.' : `Check: ${r.paidMismatches.length} order paid totals and ${r.rollupMismatches.length} statistics documents still differ.`) +
+                    (up.needsReview.length ? ` Needs review (payments to the agent exceed the commission): ${up.needsReview.map((x) => x.orderNumber).join(', ')}.` : ''),
+                );
+              },
+              'Payment Agent figures repaired',
+            )
+          }
+        >
+          Repair Payment Agent figures
         </Button>
       </Panel>
       <Panel title="Upgrade old payment-agent records">

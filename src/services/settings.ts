@@ -1,3 +1,4 @@
+import { LEGACY_DEFAULT_BUSINESS_NAME } from '../config/brand';
 import { doc, onSnapshot, serverTimestamp, writeBatch, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../firebase/app';
 import { env } from '../config/env';
@@ -12,7 +13,9 @@ export function normalizeSettings(d: Record<string, unknown> | undefined): AppSe
   const s = d ?? {};
   const fy = num(s.fyStartMonth, DEFAULT_SETTINGS.fyStartMonth);
   return {
-    businessName: str(s.businessName, DEFAULT_SETTINGS.businessName) || DEFAULT_SETTINGS.businessName,
+    // Earlier versions stored the old product name as the default business name.
+    businessName:
+      !str(s.businessName) || str(s.businessName) === LEGACY_DEFAULT_BUSINESS_NAME ? DEFAULT_SETTINGS.businessName : str(s.businessName),
     orderPrefix: sanitizePrefix(str(s.orderPrefix, DEFAULT_SETTINGS.orderPrefix)),
     defaultGstBp: Math.max(0, Math.min(2800, Math.round(num(s.defaultGstBp, DEFAULT_SETTINGS.defaultGstBp)))),
     fyStartMonth: fy >= 1 && fy <= 12 ? Math.round(fy) : 4,

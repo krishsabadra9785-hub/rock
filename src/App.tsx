@@ -1,3 +1,4 @@
+import { APP_NAME } from './config/brand';
 import { lazy, Suspense, useRef, type ReactNode } from 'react';
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { firebaseConfigured } from './firebase/app';
@@ -28,7 +29,7 @@ const SearchPage = lazy(() => import('./features/search/SearchPage'));
 const SettingsPage = lazy(() => import('./features/settings/SettingsPage'));
 
 function NotFound() {
-  return <EmptyState title="Page not found" body="That address doesn't exist in ROCK." action={<ButtonLink to="/">Go to dashboard</ButtonLink>} />;
+  return <EmptyState title="Page not found" body={`That address doesn't exist in ${APP_NAME}.`} action={<ButtonLink to="/">Go to dashboard</ButtonLink>} />;
 }
 
 function AuthenticatedApp() {

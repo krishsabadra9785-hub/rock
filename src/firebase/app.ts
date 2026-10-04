@@ -6,7 +6,7 @@ import { env, missingFirebaseConfig } from '../config/env';
 
 /**
  * Single place where Firebase is initialised.
- * ROCK V1 uses ONLY Spark-plan (no-cost) Firebase products:
+ * Sabadra Minerals V1 uses ONLY Spark-plan (no-cost) Firebase products:
  *   Authentication, Cloud Firestore, App Check (reCAPTCHA v3) and
  *   Firebase AI Logic with the Gemini Developer API free tier.
  * No Cloud Storage, Hosting or Functions.

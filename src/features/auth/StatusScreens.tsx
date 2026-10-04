@@ -1,10 +1,11 @@
+import { APP_NAME } from '../../config/brand';
 import { useState } from 'react';
 import { Button, Notice } from '../../components/ui';
 import { missingFirebaseConfig } from '../../config/env';
 import { useSession } from '../../state/SessionProvider';
 import { AuthLayout } from './AuthLayout';
 
-export function LoadingScreen({ label = 'Loading ROCK…' }: { label?: string }) {
+export function LoadingScreen({ label = `Loading ${APP_NAME}…` }: { label?: string }) {
   return (
     <div style={{ minHeight: '100%', display: 'grid', placeItems: 'center' }} role="status">
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: 'var(--muted)' }}>
@@ -20,13 +21,13 @@ export function NotAuthorizedScreen() {
   const uid = user?.uid ?? '';
   return (
     <AuthLayout>
-      <h1>Your account isn't set up in ROCK yet</h1>
+      <h1>Your account isn't set up in {APP_NAME} yet</h1>
       <p className="muted">
-        You signed in successfully, but this account has no active ROCK profile, so the database won't share any business data with it.
+        You signed in successfully, but this account has no active {APP_NAME} profile, so the database won't share any business data with it.
       </p>
       {notice && <Notice tone="warn">{notice}</Notice>}
       <Notice tone="info">
-        <strong>If you are the owner setting up ROCK for the first time:</strong> in the Firebase console open Firestore Database, create a
+        <strong>If you are the owner setting up {APP_NAME} for the first time:</strong> in the Firebase console open Firestore Database, create a
         collection <code>users</code> with a document whose ID is exactly the User UID below, and add the fields shown in the README
         (section "Create the first administrator").
       </Notice>
@@ -55,7 +56,7 @@ export function SetupRequiredScreen() {
   return (
     <AuthLayout>
       <h1>Firebase isn't configured</h1>
-      <p className="muted">ROCK needs your Firebase project settings before it can start. These values are missing:</p>
+      <p className="muted">{APP_NAME} needs your Firebase project settings before it can start. These values are missing:</p>
       <ul>
         {missing.map((m) => (
           <li key={m}>

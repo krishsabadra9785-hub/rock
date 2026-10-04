@@ -1,3 +1,4 @@
+import { APP_FILE_PREFIX } from '../../config/brand';
 import { useCallback, useEffect, useState } from 'react';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { DataTable } from '../../components/DataTable';
@@ -86,7 +87,7 @@ export default function PaymentsPage() {
   const exportCsv = async () => {
     try {
       const all = await queryAllPayments({ range: dr.range, category: category || null, partyId: partyType ? partyId : null });
-      downloadCsv(`rock-payments-${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}.csv`, all.payments, paymentColumns());
+      downloadCsv(`${APP_FILE_PREFIX}-payments-${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}.csv`, all.payments, paymentColumns());
     } catch (e) {
       toast.error(friendlyError(e));
     }

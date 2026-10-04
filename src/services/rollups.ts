@@ -7,6 +7,8 @@ import {
   combineDeltas,
   diffRollups,
   emptyRollup,
+  isLegacyRollupDoc,
+  REBUILD_BATCH_SIZE,
   normalizeRollup,
   isBoundedRange,
   orderContribution,
@@ -112,6 +114,8 @@ export interface IntegrityReport {
   paidMismatches: PaidMismatch[];
   /** Statistics documents that differ from a recomputation. */
   rollupMismatches: { key: string; fields: number }[];
+  /** Statistics documents still written in the obsolete payment-agent format. */
+  legacyDocs: number;
 }
 
 /** Read-only check: recomputes everything from orders + payments and reports differences. */
@@ -120,6 +124,7 @@ export async function checkIntegrity(onProgress?: (msg: string) => void): Promis
   const computed = computeRollupsFromSource(src);
   const stored = await getDocs(collection(db, COL.rollups));
   const storedMap = new Map<string, RollupData>(stored.docs.map((d): [string, RollupData] => [d.id, normalizeRollup(d.data())]));
+  const legacyDocs = stored.docs.filter((d) => isLegacyRollupDoc(d.data())).length;
   const rollupMismatches: IntegrityReport['rollupMismatches'] = [];
   for (const key of new Set<string>([...computed.keys(), ...storedMap.keys()])) {
     const diff = diffRollups(storedMap.get(key) ?? emptyRollup(), computed.get(key) ?? emptyRollup());
@@ -131,6 +136,7 @@ export async function checkIntegrity(onProgress?: (msg: string) => void): Promis
     payments: src.payments.length,
     paidMismatches: reconcileOrderPaid(src.orders, src.payments),
     rollupMismatches,
+    legacyDocs,
   };
 }
 
@@ -148,18 +154,20 @@ export async function rebuildRollups(onProgress?: (msg: string) => void): Promis
   for (const d of existing.docs) if (!computed.has(d.id)) ops.push({ key: d.id, data: null });
   for (const [key, data] of computed) ops.push({ key, data });
 
-  for (let i = 0; i < ops.length; i += 400) {
+  // Small batches: every document's security rules share one request budget.
+  for (let i = 0; i < ops.length; i += REBUILD_BATCH_SIZE) {
     const batch = writeBatch(db);
-    for (const op of ops.slice(i, i + 400)) {
+    for (const op of ops.slice(i, i + REBUILD_BATCH_SIZE)) {
       const ref = doc(db, COL.rollups, op.key);
       if (op.data === null) batch.delete(ref);
+      // Full replacement (no merge): removes every obsolete payment-agent field.
       else batch.set(ref, { kind: op.key.startsWith('M-') ? 'M' : 'D', key: op.key.slice(2), totals: op.data.totals, parties: op.data.parties, updatedAt: serverTimestamp() });
     }
-    if (i + 400 >= ops.length) {
+    if (i + REBUILD_BATCH_SIZE >= ops.length) {
       writeAudit(batch, uid, { entityType: 'system', entityId: 'rollups', action: 'REBUILD', summary: `Rebuilt statistics from ${src.orders.length} orders and ${src.payments.length} payments` });
     }
     await batch.commit();
-    onProgress?.(`Saved ${Math.min(i + 400, ops.length)} of ${ops.length} statistics documents…`);
+    onProgress?.(`Saved ${Math.min(i + REBUILD_BATCH_SIZE, ops.length)} of ${ops.length} statistics documents…`);
   }
   invalidateRollupCache();
   return { orders: src.orders.length, payments: src.payments.length, docs: computed.size };

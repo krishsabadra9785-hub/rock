@@ -1,3 +1,4 @@
+import { APP_FILE_PREFIX } from '../../config/brand';
 import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { DataTable } from '../../components/DataTable';
@@ -52,7 +53,7 @@ export default function LedgerPage() {
     if (!q) return;
     try {
       const all = await queryAllOrders(q);
-      downloadCsv(`rock-${kind}-${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}.csv`, all.orders.filter((o) => hasParty(o, kind)), ledgerColumns(kind));
+      downloadCsv(`${APP_FILE_PREFIX}-${kind}-${dr.range.from ?? 'all'}-${dr.range.to ?? 'now'}.csv`, all.orders.filter((o) => hasParty(o, kind)), ledgerColumns(kind));
       if (all.truncated) toast.info('Export limited to 5,000 orders. Narrow the date range for the rest.');
     } catch (e) {
       toast.error(friendlyError(e));

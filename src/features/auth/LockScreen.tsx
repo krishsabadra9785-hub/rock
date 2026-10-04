@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../config/brand';
 import { useEffect, useState } from 'react';
 import { Button, Notice } from '../../components/ui';
 import { friendlyError } from '../../services/errors';
@@ -42,7 +43,7 @@ export function LockScreen() {
       <div style={{ textAlign: 'center' }}>
         <h1>Enter your PIN</h1>
         <p className="muted small" style={{ marginTop: 4 }}>
-          {profile?.displayName ? `Signed in as ${profile.displayName}` : 'ROCK is locked'}
+          {profile?.displayName ? `Signed in as ${profile.displayName}` : `${APP_NAME} is locked`}
         </p>
       </div>
       {notice && <Notice tone="warn">{notice}</Notice>}

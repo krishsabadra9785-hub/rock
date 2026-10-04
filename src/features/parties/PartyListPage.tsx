@@ -1,3 +1,4 @@
+import { StaleStatisticsNotice } from '../../components/StaleStatisticsNotice';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../components/DataTable';
@@ -74,6 +75,7 @@ export default function PartyListPage({ type }: { type: PartyType }) {
         </label>
       </div>
       {error && <ErrorNotice error={error} />}
+      <StaleStatisticsNotice data={[lifetime.data]} />
       <Panel bodyless>
         <DataTable
           rows={rows}

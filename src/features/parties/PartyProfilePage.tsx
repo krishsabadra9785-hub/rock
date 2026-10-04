@@ -1,3 +1,4 @@
+import { StaleStatisticsNotice } from '../../components/StaleStatisticsNotice';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
@@ -169,6 +170,7 @@ export default function PartyProfilePage({ type }: { type: PartyType }) {
 
       <DateFilter state={dr} />
       {period.error && <ErrorNotice error={period.error} onRetry={period.reload} />}
+      <StaleStatisticsNotice data={[period.data, lifetime.data]} />
 
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ value: 'orders', label: 'Orders' }, { value: 'payments', label: 'Payments' }, { value: 'rates', label: 'Rate history' }]} />
 

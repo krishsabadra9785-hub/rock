@@ -1,3 +1,5 @@
+import { APP_NAME } from '../../config/brand';
+import { StaleStatisticsNotice } from '../../components/StaleStatisticsNotice';
 import { useNavigate } from 'react-router-dom';
 import { BarList, type BarItem } from '../../components/BarList';
 import { DateFilter } from '../../components/DateFilter';
@@ -37,7 +39,7 @@ export default function DashboardPage() {
     <div className="stack">
       <PageHeader
         title="Dashboard"
-        sub={settings.businessName !== 'ROCK' ? settings.businessName : 'Trading overview from confirmed orders and recorded payments'}
+        sub={settings.businessName !== APP_NAME ? settings.businessName : 'Trading overview from confirmed orders and recorded payments'}
         actions={
           <ButtonLink to="/orders/new" variant="primary" icon="plus">
             Create order
@@ -46,6 +48,7 @@ export default function DashboardPage() {
       />
       <DateFilter state={dr} />
       {period.error && <ErrorNotice error={period.error} onRetry={period.reload} />}
+      <StaleStatisticsNotice data={[period.data, lifetime.data]} />
 
       <div className="figures">
         <Figure lead label="Total selling (incl. GST)" value={v(t?.buyerGross)} onClick={() => navigate(`/ledger/buyer?${q}`)} />

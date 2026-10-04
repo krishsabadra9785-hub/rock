@@ -313,7 +313,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     // Optional text is stored as '' (not null) and sizes as integers: the
     // security rules check all receipt text with one string-length test.
     if (input.receipt.image.provider !== 'NONE') {
-      throw new AppError('Receipt image storage is not enabled in this version of ROCK');
+      throw new AppError('Receipt image storage is not enabled in this version of the app');
     }
     const receipt: ReceiptSnapshot = {
       image: {
