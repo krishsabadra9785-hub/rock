@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   getDocs,
-  increment,
   limit,
   orderBy,
   query,
@@ -16,10 +15,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/app';
 import { isValidISODate, type DateRange } from '../domain/dates';
-import { CATEGORY_META } from '../domain/payments';
+import { applyPaymentToOrder, assertPaymentMatchesOrder, assertValidPaymentAmount, categoryAcceptsPartyType, CATEGORY_META, PaymentIntegrityError } from '../domain/payments';
 import { paymentContribution } from '../domain/rollups';
 import { PAYMENT_CATEGORIES, PAYMENT_METHODS, type PartyType, type Payment, type PaymentCategory, type PaymentMethod } from '../domain/types';
-import { MAX_PAYMENT_PAISE, validateOptionalText } from '../domain/validation';
+import { validateOptionalText } from '../domain/validation';
 import { formatINR } from '../domain/format';
 import { AppError } from './errors';
 import { COL, num, requireUid, str, strOrNull, toDate, updatedFields, writeAudit, writeRollupDeltas } from './firestore';
@@ -66,8 +65,10 @@ export interface PaymentInput {
 export async function recordPayment(input: PaymentInput): Promise<{ id: string; duplicate: boolean }> {
   const uid = requireUid();
   const meta = CATEGORY_META[input.category];
-  if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > MAX_PAYMENT_PAISE) {
-    throw new AppError('Enter a valid amount');
+  try {
+    assertValidPaymentAmount(input.amount);
+  } catch (e) {
+    throw new AppError(e instanceof Error ? e.message : 'Enter a valid amount');
   }
   if (!isValidISODate(input.date)) throw new AppError('Enter a valid payment date');
   if (meta.partyType && !input.partyId) throw new AppError('Select who this payment is for');
@@ -91,7 +92,7 @@ export async function recordPayment(input: PaymentInput): Promise<{ id: string; 
       const ps = await tx.get(doc(db, COL.parties, input.partyId));
       if (!ps.exists()) throw new AppError('The selected party no longer exists');
       const p = toParty(ps.id, ps.data());
-      if (meta.partyType && p.type !== meta.partyType) throw new AppError(`${p.name} is not the right kind of party for ${meta.label}`);
+      if (!categoryAcceptsPartyType(input.category, p.type)) throw new AppError(`${p.name} is not the right kind of party for ${meta.label}`);
       partyName = p.name;
       partyType = p.type;
     }
@@ -103,16 +104,18 @@ export async function recordPayment(input: PaymentInput): Promise<{ id: string; 
       if (!os.exists()) throw new AppError('The linked order no longer exists');
       const o = toOrder(os.id, os.data());
       if (o.status !== 'CONFIRMED') throw new AppError('Payments cannot be recorded against a cancelled order');
-      const expectedParty = {
-        buyer: o.buyerId,
-        seller: o.sellerId,
-        commission: o.commissionAgentId,
-        freight: o.transporterId,
-        paymentAgent: o.paymentAgentId,
-      }[meta.paidKey];
-      if (expectedParty !== input.partyId) throw new AppError(`That party is not on order ${o.orderNumber}`);
+      try {
+        assertPaymentMatchesOrder(o, input.category, input.partyId);
+        // Explicit new total computed from the value read in THIS transaction.
+        // Firestore retries the transaction if the order changed meanwhile, and the
+        // security rules re-check that it moved by exactly this payment's amount.
+        const paid = applyPaymentToOrder(o, input.category, input.amount, 1);
+        tx.update(os.ref, { [`paid.${meta.paidKey}`]: paid[meta.paidKey], lastPaymentId: payRef.id, ...updatedFields(uid) });
+      } catch (e) {
+        if (e instanceof PaymentIntegrityError) throw new AppError(`${o.orderNumber}: ${e.message.replace(/ \(\d+ paise\)$/, '')}.`);
+        throw e;
+      }
       orderNumber = o.orderNumber;
-      tx.update(os.ref, { [`paid.${meta.paidKey}`]: increment(input.amount), ...updatedFields(uid) });
     }
 
     const data = {
@@ -121,7 +124,7 @@ export async function recordPayment(input: PaymentInput): Promise<{ id: string; 
       amount: input.amount,
       partyId: input.partyId,
       partyType,
-      partyName,
+      partyName: partyName.slice(0, 120),
       orderId: input.orderId,
       orderNumber,
       method: input.method,
@@ -162,7 +165,9 @@ export async function voidPayment(id: string, reason: string): Promise<void> {
     if (p.orderId && meta.paidKey) {
       const oref = doc(db, COL.orders, p.orderId);
       const os = await tx.get(oref);
-      if (os.exists()) tx.update(oref, { [`paid.${meta.paidKey}`]: increment(-p.amount), ...updatedFields(uid) });
+      if (!os.exists()) throw new AppError('The linked order no longer exists');
+      const paid = applyPaymentToOrder(toOrder(os.id, os.data()), p.category, p.amount, -1);
+      tx.update(oref, { [`paid.${meta.paidKey}`]: paid[meta.paidKey], lastPaymentId: p.id, ...updatedFields(uid) });
     }
     tx.update(ref, { status: 'VOID', voidReason: why.slice(0, 300), ...updatedFields(uid) });
     writeRollupDeltas(tx, [paymentContribution(p, -1)]);

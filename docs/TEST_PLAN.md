@@ -6,18 +6,22 @@ Run on every push by GitHub Actions; deployment is blocked if any fail.
 
 | File | Covers |
 |---|---|
-| `tests/calc.test.ts` | **The 38.52 MT acceptance figures**: base ₹4,81,500 · GST ₹24,075 · buyer total ₹5,05,575 · effective ₹13,125/MT · seller ₹3,73,644 · commission ₹27,927 · freight ₹32,742 · PA receives ₹5,05,575 · PA deduction ₹38,520 · balance ₹4,67,055. Also GST 0/18/2.5%, 3-decimal quantities, half-up rounding, no float drift, invalid inputs. |
+| `tests/calc.test.ts` | **The 38.52 MT acceptance figures**: base ₹4,81,500 · GST ₹24,075 · buyer total ₹5,05,575 (owed to us) · effective ₹13,125/MT · seller ₹3,73,644 · commission ₹27,927 · freight ₹32,742 · payment agent commission ₹38,520 (payable; no ₹4,67,055 \"balance\" exists). Also GST 0/18/2.5%, 3-decimal quantities, half-up rounding, no float drift, invalid inputs. |
 | `tests/money.test.ts` | Parsing rupees/MT/percent from strings, Indian formatting (₹5,05,575), safe sums, average rate |
 | `tests/rates.test.ts` | Carry-forward: orders 1–10 use ₹1,000; "this order only" leaves default; "new default" carries forward with history; historical orders unchanged; identical behaviour for every rate type incl. GST and payment agent |
-| `tests/payments.test.ts` | Obligations from snapshots, multiple part payments, outstanding, settlement status |
+| `tests/payments.test.ts` | Obligations from snapshots (PA obligation = commission), multiple part payments, outstanding, payment status |
 | `tests/rollups.test.ts` | Dashboard statistics: order/payment contributions, cancel/void reversal, party summaries, outstanding receivables/payables, minimal day/month key planning, edits that move dates |
 | `tests/dates.test.ts` | Configurable financial year (April default, Jan/July), week/month/custom ranges, leap years |
 | `tests/validation.test.ts` | Quantity, rates, GST, phones, dates, GSTIN, receipt files, login ID, PIN rules, passwords |
 | `tests/extraction.test.ts` | AI output never trusted: kg→MT conversion, suspicious values, low confidence, wrong types, DD/MM dates, malformed JSON |
 | `tests/misc.test.ts` | Order numbering, CSV escaping and formula-injection guard, search tokens, role permissions |
+| `tests/paymentIntegrity.test.ts` | Negative/zero/fractional/NaN/Infinity amounts rejected; payment ↔ order party consistency for all five categories; overpayment rejected; multiple part payments; void reversal never negative; payment agent payable ₹38,520 → ₹28,520 after ₹10,000 → restored on void; overpayment rejected; corrections can't go below paid; reconciliation of paid totals vs ACTIVE payments; PA rate snapshot unaffected by later default change; role matrix |
+| `tests/rulesMirror.test.ts` | Proves app amounts always satisfy the rules' integer formula (5,000 random orders) and tampered ±1 paisa never does; 64-bit bounds; statistics diff detection |
+| `tests/rules/rules.test.ts` (emulator, `npm run test:rules`) | The real `firestore.rules`: access control, role escalation, PIN-hash privacy, order amount validation (GST, PA deduction/balance, seller), party type/name checks, counter-allocated numbers, no image content, no deletes, cancelled orders final, payment↔paid coupling, wrong party, overpayment, negative/zero/fractional amounts, double counting, void once, immutable payments, rate history genuine + append-only, master rate change leaves orders unchanged, statistics paid totals protected from OPERATIONS, audit log append-only |
+| `tests/aiStatus.test.ts` | AI is Configured with Firebase web config + model and **without** App Check; missing App Check never disables AI; genuinely missing config/model reported; "turned off" distinct; workflow passes `VITE_AI_MODEL` and doesn't require an App Check key |
 | `tests/architecture.test.ts` | Zero-cost guard rails: no Firebase Storage/Functions/Vertex imports, no hosting/storage in `firebase.json`, `/rock/` base path, HashRouter, Pages workflow, receipt provider stores nothing, no open rules, no private keys |
 
-**Rules testing:** use Firebase console → Firestore → Rules → **Rules Playground** for the security scenarios in §3, or the Emulator Suite (`npm run emulators`, set `VITE_USE_EMULATORS=true`).
+**Rules testing:** `npm run test:rules` runs the emulator suite automatically (also in GitHub Actions). For ad-hoc checks use Firebase console → Firestore → Rules → **Rules Playground**.
 
 ## 2. End-to-end acceptance (manual, on the live site)
 
@@ -42,15 +46,16 @@ Use a phone for steps 9–12 at least once. Record pass/fail and date.
 | 15 | Default commission agent | Pre-selected with ₹725 |
 | 16 | Transporter | Pre-selected (or select) with ₹850 |
 | 17 | Payment agent | Pre-selected with ₹1,000 |
-| 18 | Review | Base ₹4,81,500; GST ₹24,075; total ₹5,05,575; seller ₹3,73,644; commission ₹27,927; freight ₹32,742; PA keeps ₹38,520; balance ₹4,67,055 |
+| 18 | Review | Base ₹4,81,500; GST ₹24,075; buyer owes ₹5,05,575; seller ₹3,73,644; commission ₹27,927; freight ₹32,742; payment agent commission payable ₹38,520 |
 | 19 | Double-click **Confirm order** | Exactly one order created (ROCK-2026-000001) |
-| 20 | Order page | All figures as above; settlement table |
+| 20 | Order page | All figures as above; payment table lists the payment agent commission as a payable |
 | 21 | Receipt | Confirmed fields shown; note says image was not stored |
 | 22–26 | Open buyer, seller, agent, transporter, payment agent profiles | Order in each ledger; summary band shows period and lifetime totals |
 | 27 | Dashboard (This month) | Selling ₹5,05,575; buying ₹3,73,644; commission ₹27,927; freight ₹32,742; PA charges ₹38,520; quantity 38.52 MT; 1 order |
 | 28–29 | Switch dashboard / profiles between Today, Month, FY, All time | Totals consistent; ranges without the order show ₹0 |
 | 30 | New order, change seller rate to ₹10,000, choose **New default going forward** | Saved; seller profile rate = ₹10,000; rate history entry linked to the order |
 | 31 | Open the first order | Seller rate still ₹9,700, total ₹3,73,644 |
+| 32a | On the first order record a ₹10,000 payment agent payment, void it, then try ₹38,521 | Outstanding payable ₹28,520 then back to ₹38,520; ₹38,521 rejected |
 | 32 | On the first order record transporter payments ₹10,000 then ₹22,742 | Two payment rows; status Part paid → Paid |
 | 33 | Transporter profile and dashboard outstanding payables | Freight outstanding decreases accordingly |
 | 34 | Search the vehicle number and the order number | Order found |

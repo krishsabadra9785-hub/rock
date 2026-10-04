@@ -153,3 +153,17 @@ export function scaledToInputString(value: number, scale: number): string {
 export const paiseToInput = (p: Paise): string => scaledToInputString(p, 2);
 export const kgToInput = (kg: Kg): string => scaledToInputString(kg, 3);
 export const bpToInput = (bp: BasisPoints): string => scaledToInputString(bp, 2);
+
+/**
+ * Mirror of the Firestore rule `roundedProduct` (firestore.rules): true when
+ * `amount` equals roundHalfUp(a × b ÷ div), checked with integer arithmetic only:
+ *   amount·div − div/2 ≤ a·b < amount·div + div/2
+ * Used by tests to prove the app's calculations always satisfy the database rules.
+ */
+export function isRoundedProduct(amount: number, a: number, b: number, div: 1000 | 10000): boolean {
+  if (![amount, a, b].every(isSafeInt) || amount < 0) return false;
+  const half = BigInt(div / 2);
+  const p = BigInt(a) * BigInt(b);
+  const scaled = BigInt(amount) * BigInt(div);
+  return scaled - half <= p && p < scaled + half;
+}

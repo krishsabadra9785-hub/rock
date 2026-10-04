@@ -39,11 +39,10 @@ export const SUMMARY_METRICS: Record<PartyType, Metric[]> = {
   ],
   PAYMENT_AGENT: [
     ...COMMON,
-    { label: 'Amount processed', value: (s) => formatINR(s.received) },
-    { label: 'Total deductions', value: (s) => formatINR(s.charge) },
-    { label: 'Balance after deductions', value: (s) => formatINR(s.amount) },
-    { label: 'Settled to us', value: (s) => formatINR(s.paid) },
-    { label: 'Pending settlement', value: (s) => formatINR(s.outstanding) },
+    { label: 'Total commission', value: (s) => formatINR(s.amount) },
+    { label: 'Average rate', value: (s) => formatRate(s.averageRate) },
+    { label: 'Total paid', value: (s) => formatINR(s.paid) },
+    { label: 'Outstanding payable', value: (s) => formatINR(s.outstanding) },
   ],
 };
 

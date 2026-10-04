@@ -12,11 +12,13 @@ import { changePassword, emailToLoginId } from '../../services/auth';
 import { exportAllData } from '../../services/backup';
 import { seedDemoData } from '../../services/demo';
 import { friendlyError } from '../../services/errors';
-import { rebuildRollups } from '../../services/rollups';
+import { checkIntegrity, rebuildRollups } from '../../services/rollups';
+import { upgradeLegacyPaymentAgentOrders } from '../../services/orders';
 import { saveSettings } from '../../services/settings';
 import { listUsers, updateOwnDisplayName, upsertUser } from '../../services/users';
 import { receiptStorage } from '../../services/receiptStorage';
-import { appCheck } from '../../firebase/app';
+import { aiStatus } from '../../config/aiStatus';
+import { testAiConnection } from '../../services/ai';
 import { useSession } from '../../state/SessionProvider';
 import { useToast } from '../../state/ToastProvider';
 import { downloadBlob } from '../../utils/download';
@@ -172,23 +174,65 @@ function AiTab() {
   const editable = can(profile?.role, 'settings.write');
   const [enabled, setEnabled] = useState(settings.aiEnabled);
   const [model, setModel] = useState(settings.aiModel);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const status = aiStatus({
+    apiKey: env.firebase.apiKey,
+    projectId: env.firebase.projectId,
+    appId: env.firebase.appId,
+    model: settings.aiModel,
+    aiEnabledSetting: settings.aiEnabled,
+    appCheckSiteKey: env.recaptchaV3SiteKey,
+  });
   return (
     <div className="stack">
       <Panel title="Receipt reading">
         <dl className="kv">
+          <dt>Status</dt>
+          <dd>
+            {status.state === 'CONFIGURED' && <Badge tone="ok">Configured</Badge>}
+            {status.state === 'DISABLED_IN_SETTINGS' && <Badge>Turned off below</Badge>}
+            {status.state === 'NOT_CONFIGURED' && <Badge tone="danger">Not configured: {status.missing.join(', ')}</Badge>}
+          </dd>
+          <dt>Model</dt><dd>{status.model || '—'}</dd>
           <dt>Service</dt><dd>Firebase AI Logic, Gemini Developer API (free tier, no billing)</dd>
-          <dt>App Check</dt><dd>{appCheck ? <Badge tone="ok">On (reCAPTCHA v3)</Badge> : <Badge tone="warn">Not configured</Badge>}</dd>
           <dt>Receipt images</dt><dd>{receiptStorage.persistsImages ? 'Stored' : 'Used for reading only, never stored'}</dd>
         </dl>
+        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Button
+            size="sm"
+            icon="check"
+            busy={busy === 'aitest'}
+            disabled={status.state === 'NOT_CONFIGURED'}
+            onClick={() =>
+              void run('aitest', async () => {
+                setTestResult(null);
+                const reply = await testAiConnection(settings.aiModel);
+                setTestResult(`Connected: the model replied "${reply}".`);
+              })
+            }
+          >
+            Test AI connection
+          </Button>
+          {testResult && <span className="small" style={{ color: 'var(--ok)' }}>{testResult}</span>}
+        </div>
         <fieldset disabled={!editable} style={{ border: 0, padding: 0, margin: '16px 0 0' }}>
           <div className="form-grid">
             <label className="check span-2"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Read receipts automatically when creating orders</label>
-            <Field label="Model" htmlFor="ai-model" hint="Use a model available on the Gemini Developer API free tier, e.g. gemini-2.5-flash or gemini-2.5-flash-lite">
+            <Field label="Model" htmlFor="ai-model" hint="A model available on the Gemini Developer API free tier, e.g. gemini-2.5-flash or gemini-2.5-flash-lite">
               <TextInput id="ai-model" value={model} onChange={(e) => setModel(e.target.value.trim())} />
             </Field>
           </div>
         </fieldset>
         {editable && <div style={{ marginTop: 14 }}><Button variant="primary" busy={busy === 'ai'} onClick={() => void run('ai', () => saveSettings({ aiEnabled: enabled, aiModel: model }), 'AI settings saved')}>Save</Button></div>}
+      </Panel>
+      <Panel title="App Check (optional)">
+        <dl className="kv">
+          <dt>App Check</dt>
+          <dd>{status.appCheck === 'ENABLED' ? <Badge tone="ok">Enabled (reCAPTCHA v3)</Badge> : <Badge>Not enabled</Badge>}</dd>
+        </dl>
+        <p className="small muted" style={{ marginTop: 10 }}>
+          App Check does not affect receipt reading. Enabling it later (README step 3.5) protects your free AI quota from misuse by other websites.
+        </p>
       </Panel>
       <Notice tone="info">If the free AI quota runs out or reading fails, ROCK says so and you type the details yourself. It never switches to a paid service.</Notice>
     </div>
@@ -250,6 +294,46 @@ function DataTab() {
       <Panel title="Backup">
         <p className="muted" style={{ marginBottom: 12 }}>Downloads every business record (parties, orders, payments, rate history, settings) as a JSON file. Keep it somewhere safe; it contains confidential data.</p>
         <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`rock-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
+      </Panel>
+      <Panel title="Check figures">
+        <p className="muted" style={{ marginBottom: 12 }}>Recomputes every total from the original orders and active payments and compares it with what is stored. Changes nothing.</p>
+        <Button
+          icon="check"
+          busy={busy === 'check'}
+          onClick={() =>
+            void run('check', async () => {
+              const r = await checkIntegrity(setProgress);
+              setProgress(
+                r.paidMismatches.length === 0 && r.rollupMismatches.length === 0
+                  ? `All figures match: ${r.orders} orders, ${r.payments} payments checked.`
+                  : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents. Rebuild statistics fixes dashboard figures; contact support for order paid totals.`,
+              );
+            })
+          }
+        >
+          Check figures
+        </Button>
+      </Panel>
+      <Panel title="Upgrade old payment-agent records">
+        <p className="muted" style={{ marginBottom: 12 }}>
+          Only needed if orders were saved before the payment-agent change (buyer pays us directly; the agent's commission is a payable). It rewrites each such order's
+          payment-agent line to the current format using the order's own saved rate, with an audit entry. Safe to run more than once. Run "Rebuild statistics" afterwards.
+        </p>
+        <Button
+          icon="refresh"
+          busy={busy === 'upgrade'}
+          onClick={() =>
+            void run('upgrade', async () => {
+              const r = await upgradeLegacyPaymentAgentOrders(setProgress);
+              setProgress(
+                `Checked ${r.scanned} orders: ${r.upgraded.length} upgraded, ${r.alreadyCurrent} already current` +
+                  (r.needsReview.length ? `. Needs review (payments to the agent exceed the commission): ${r.needsReview.map((x) => x.orderNumber).join(', ')}` : '.'),
+              );
+            })
+          }
+        >
+          Upgrade old records
+        </Button>
       </Panel>
       <Panel title="Rebuild statistics">
         <p className="muted" style={{ marginBottom: 12 }}>Dashboards use summary documents kept up to date with every order and payment. If figures ever look wrong, rebuild them from the original records. This reads every order and payment once.</p>

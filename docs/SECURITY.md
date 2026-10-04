@@ -11,6 +11,54 @@
 3. **App Check (reCAPTCHA v3)** rejects requests that don't come from the genuine ROCK site once enforced, protecting free quotas (especially Gemini) from abuse.
 4. **No secrets in the repository.** The Firebase web config is public by design. The Gemini key is managed by Firebase AI Logic inside the project and never appears in code. `.env*` files are git-ignored. An automated test fails the build if a private key or service-account JSON appears in `src/`.
 
+## Financial invariants and where each is enforced
+
+Layers: **A** Firestore rules · **B** transactions/atomic batches · **C** app validation · **D** immutable snapshots · **E** automated tests (`tests/*.test.ts` = app layer, `tests/rules/rules.test.ts` = rules on the emulator).
+
+| Invariant | Enforced by |
+|---|---|
+| Every order amount = qty × rate (half-up to the paisa); GST = base × %; gross = base + GST | A (integer re-derivation in `validFinancials`), C (`calculateOrder`), E (5,000-case mirror test + rules tests) |
+| Payment agent commission = qty × snapshotted PA rate (a payable); no buyer money attributed to the agent; obsolete received/balance fields rejected on new orders | A (`validFreightAndAgent`), C, D, E |
+| No party → zero rate and zero amount for that line | A, C |
+| Order lines reference real parties of the right type; name snapshots match | A (`validParties`), B |
+| Order number = counter value allocated in the same commit; counter only +1 | A (`validNumbering`, counter rules), B |
+| Paid totals are whole paise, ≥ 0, ≤ obligation (no overpayment against an order) | A (`validPaid`), C (`applyPaymentToOrder`), E |
+| Order paid totals change **only** together with one payment created/voided in the same commit, by exactly its amount, for the matching obligation → paid = Σ ACTIVE linked payments | A (`paidChangeBackedByPayment` ↔ `orderAcceptsPayment`/`orderAcceptsVoid`, mutual checks), B, E |
+| Payment party/category/order relationship is consistent | A (`validPaymentParty`, `orderAcceptsPayment`), C (`assertPaymentMatchesOrder`), E |
+| Payment amount positive whole paise ≤ ₹100 crore | A, C, E |
+| Duplicate submission counted once | B (client UUID document IDs, existence check in the transaction), A (re-creating an existing payment is an update, which only allows voiding) |
+| Concurrent payments can't corrupt totals | B (transaction reads the order; Firestore retries on conflict), A (delta checked against the stored value, so stale explicit values are rejected) |
+| Payments are never edited or deleted; only ACTIVE → VOID once | A, E |
+| Corrections can't change parties/number/paid, can't push an amount below what was paid, bump `version` | A, C, E |
+| Cancelled orders are final; cancel only by ADMIN with nothing paid | A, C, E |
+| No deletion of orders, payments, parties, rate history, audit logs | A, E |
+| Default rate change always creates a new history entry with the real old value; history is append-only | A (`rateChangeRecorded`, `validRateHistory`), B, E |
+| Changing a master rate never changes saved orders | D (orders store their own rates/amounts; nothing recomputes them), E |
+| No receipt image content in Firestore | A (receipt key whitelists; provider must be `NONE`; all receipt text must be strings with ≤ 700 characters in total, AI output ≤ 8,600), C (`NoPermanentStorageProvider` returns metadata only), E |
+| Dashboard statistics (`rollups`) match the source records | B (updated in the same transaction), plus **Check figures** / **Rebuild statistics** (deterministic recomputation). See residual risks. |
+
+## Rules expression budget
+
+Firestore evaluates at most 1,000 expressions per request, and function arguments are re-evaluated wherever a parameter is used. The order rules are therefore written to touch each value once:
+- Each amount is checked with one remainder, `0 ≤ qty×rate − amount×1000 + 500 < 1000`. That is exact half-up rounding, and it also implies amount ≥ 0 and amount = 0 for a zero rate.
+- All receipt text is checked with one concatenated string-length test.
+- Updates are validated with per-purpose field whitelists (`affectedKeys().hasOnly`) instead of full-document checks.
+- A rate-only party update validates just the rates and history.
+
+`tests/rules/rules.test.ts` replays the app's complete order, payment and correction commits so the budget is tested, not assumed.
+
+## Residual risks (client-side / serverless architecture)
+
+There is no trusted server on the free plan, so be clear about what remains:
+
+1. **Statistics documents are derived data and only partly protected.** Rules restrict who can write them and stop non-accounting roles changing payment totals in them. They cannot verify that every per-party increment exactly matches an order. A malicious *authorised* OPERATIONS/ACCOUNTS user calling Firestore directly could distort dashboard figures. Orders and payments, the source of truth, stay correct. **Settings → Data → Check figures** detects any divergence and **Rebuild statistics** repairs it. Run Check figures periodically, e.g. monthly.
+2. **Authorised users are trusted within their role.** ACCOUNTS can record real-looking payments and corrections (each audit-logged and reason-tagged). OPERATIONS can create orders and change default rates (each with history). The rules stop impossible numbers, not dishonest-but-valid entries.
+3. **The PIN is a device unlock, not server-verified** (see below).
+4. **Audit log entries are written by the client.** Rules make them append-only and attributed to the caller's uid. A user calling Firestore directly could omit an audit entry for a legitimate action. The financial records themselves (with `createdBy`/`updatedBy`, `version`, rate history, voided payments) remain.
+5. **Configuration-dependent:** the rules must actually be published; App Check enforcement is a manual console step; Authorized domains must be set; self sign-up should be disabled where available.
+6. **Receipt storage provider:** V1 rules accept only `provider: 'NONE'`. Enabling image storage later requires a rules change as well as the new provider.
+7. **Pre-existing data:** the paid-total invariant holds by induction from creation under these rules. Data written under an older rule set should be checked once with **Check figures**.
+
 ## Role matrix
 
 | Action | ADMIN | ACCOUNTS | OPERATIONS | VIEW_ONLY |
@@ -23,6 +71,10 @@
 | Cancel orders | ✓ | | | |
 | Settings, users, rebuild statistics, backup | ✓ | | | |
 | Read audit log | ✓ | ✓ | | |
+| Write statistics (as part of orders) | ✓ | ✓ | ✓ (not payment totals) | |
+| Write audit entries (as part of actions) | ✓ | ✓ | ✓ | |
+
+VIEW_ONLY users can write only their own display name and their own PIN hash.
 
 Mirrored in `src/domain/permissions.ts` (UI) — the rules are authoritative.
 

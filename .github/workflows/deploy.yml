@@ -62,7 +62,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Tests (including the 38.52 MT financial acceptance tests)
         run: npm test
@@ -85,9 +84,42 @@ jobs:
         with:
           path: dist
 
+  # Security rules tests against the Firestore emulator (no Firebase project or billing needed).
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up Java (needed by the Firestore emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install rules-test dependencies (tests/rules has its own package.json)
+        run: |
+          if [ -f tests/rules/package-lock.json ]; then
+            npm ci --prefix tests/rules
+          else
+            echo "::warning::tests/rules/package-lock.json not found — using npm install. Commit it for reproducible builds."
+            npm install --prefix tests/rules --no-audit --no-fund
+          fi
+
+      - name: Check tool versions
+        run: |
+          node --version
+          java -version
+          npx --prefix tests/rules firebase --version
+
+      - name: Firestore security rules tests (emulator)
+        run: npm run test:rules
+
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, rules]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

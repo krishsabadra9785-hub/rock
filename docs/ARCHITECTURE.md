@@ -36,7 +36,7 @@ There is no backend of our own. All authorisation is enforced by `firestore.rule
 - GST is computed on the base *amount* (not per MT): `gst = base × bp / 10000`, half-up.
 - User input is parsed from strings (`parseRupees`, `parseQuantityMt`, `parsePercent`) — never `parseFloat`.
 - All formulas live in `domain/calc.ts → calculateOrder()`; UI previews, saved snapshots, corrections and tests all use it.
-- Firestore security rules re-check invariants on save (e.g. `gross == base + gst`, `balance == received − deduction`).
+- Firestore security rules re-check invariants on save (e.g. `gross == base + gst`, and every payable amount = qty × its rate).
 
 ## The universal rate engine (`domain/rates.ts`)
 
@@ -64,7 +64,7 @@ Corrections (`editOrder`) require a reason, check an optimistic `version`, never
 
 Each payment is its own document (`payments/{id}`), so any number of part payments per order is supported. When linked to an order, the same transaction increments `order.paid.<obligation>` (a cache for list views, derived from payments) and the statistics. Payments are **voided**, never deleted; voiding reverses those increments.
 
-Obligations per order: buyer gross (receivable), seller amount, commission, freight (payables), and the payment-agent balance (due to us from the payment agent).
+Obligations per order: buyer gross (receivable: the buyer pays us directly), and seller amount, commission, freight and the payment-agent commission (payables we owe).
 
 ## Dashboards and statistics (`domain/rollups.ts`)
 
@@ -106,7 +106,8 @@ Reading every order for every dashboard would exhaust the free read quota. Inste
 - **Single `parties` collection with a `type` field** instead of five collections: one rate engine, one set of rules, one listener for dropdowns.
 - **Buyer/seller "freight if applicable"** is modelled as a *default transporter* preference; freight amounts always come from the transporter's rate.
 - **Total Selling** on the dashboard is the buyer gross including GST; base and GST are shown separately.
-- **Payment agent "pending settlement"** = balance after deduction − settlement payments received from the agent.
-- **"Left after payouts"** on an order = balance after payment-agent deduction − seller − commission − freight. It still includes GST collected, which is owed separately.
+- **Payment agent (current model):** the buyer pays us directly; buyer money is never routed through the payment agent. The agent earns a commission = qty × its per-MT rate (snapshotted on the order), which is a **payable**. Payments we make to the agent reduce it: outstanding payable = commission − active payments. The stored category value `PAYMENT_AGENT_SETTLEMENT` is kept for compatibility and means "payment to the payment agent".
+- **Obsolete model (data compatibility only):** orders saved earlier stored `paymentAgent.received/deduction/balance` ("agent receives the buyer's money, deducts its charge, owes us the balance"). They are read with commission = `deduction`; `received`/`balance` are ignored and never shown. Settings → Data → **Upgrade old records** rewrites them to the current shape through the audited correction path.
+- **"Left after payouts"** on an order = buyer gross − seller − commission − freight − payment-agent commission. It still includes GST collected, which is owed separately.
 - **Order numbers** restart each calendar year: `ROCK-2026-000001`. The prefix is configurable; existing numbers never change.
 - **Drafts** are kept in the browser while the form is open (an auto-lock overlays rather than unmounts the form). Firestore orders are created only on confirmation.

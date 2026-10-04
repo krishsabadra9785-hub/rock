@@ -37,7 +37,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<DataContextValue>(() => {
-    const byId = new Map(parties.map((p) => [p.id, p]));
+    const byId = new Map<string, Party>(parties.map((p): [string, Party] => [p.id, p]));
     return {
       parties,
       loading,

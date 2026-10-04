@@ -14,7 +14,7 @@ export interface Column<T> {
   sum?: (row: T) => number;
   sumKind?: 'inr' | 'qty';
   link?: (row: T) => string | null;
-  /** Column holds a settlement status badge. */
+  /** Column holds a payment-status badge. */
   status?: (row: T) => SettlementStatus;
   /** Sort key for client-side sorting. */
   sortValue?: (row: T) => number | string;
@@ -189,15 +189,12 @@ export function ledgerColumns(kind: LedgerKind): Column<Order>[] {
       return [
         orderNo,
         date,
-        text('buyer', 'Buyer', (o) => o.buyer.name, (o) => `/buyers/${o.buyerId}`),
+        text('agent', 'Payment agent', (o) => o.paymentAgent.name, (o) => (o.paymentAgentId ? `/payment-agents/${o.paymentAgentId}` : null)),
+        text('buyer', 'Buyer', (o) => o.buyer.name),
         qty,
-        money('base', 'Buyer amount', (o) => o.buyer.baseAmount),
-        money('gst', 'GST', (o) => o.buyer.gstAmount),
-        money('received', 'Amount received', (o) => o.paymentAgent.received),
         rate('rate', 'Rate/MT', (o) => o.paymentAgent.ratePaise),
-        money('deduction', 'Agent deduction', (o) => o.paymentAgent.deduction),
-        money('balance', 'Balance after deduction', (o) => o.paymentAgent.balance),
-        ...settlementCols('paymentAgent', 'Settled', 'Pending'),
+        money('amount', 'Commission payable', (o) => o.paymentAgent.amount),
+        ...settlementCols('paymentAgent'),
       ];
   }
 }
@@ -231,14 +228,12 @@ export function orderExportColumns(): Column<Order>[] {
     money('freight', 'Freight', (o) => o.freight.amount),
     text('pa', 'Payment agent', (o) => o.paymentAgent.name),
     rate('paRate', 'Payment agent rate', (o) => o.paymentAgent.ratePaise),
-    money('paReceived', 'PA received', (o) => o.paymentAgent.received),
-    money('paDeduction', 'PA deduction', (o) => o.paymentAgent.deduction),
-    money('paBalance', 'Balance after deduction', (o) => o.paymentAgent.balance),
+    money('paCommission', 'Payment agent commission', (o) => o.paymentAgent.amount),
     money('paidBuyer', 'Received from buyer', (o) => o.paid.buyer),
     money('paidSeller', 'Paid to seller', (o) => o.paid.seller),
     money('paidComm', 'Commission paid', (o) => o.paid.commission),
     money('paidFreight', 'Freight paid', (o) => o.paid.freight),
-    money('paidPa', 'Settled by payment agent', (o) => o.paid.paymentAgent),
+    money('paidPa', 'Paid to payment agent', (o) => o.paid.paymentAgent),
     text('notes', 'Notes', (o) => o.notes),
     { id: 'cancelReason', header: 'Cancel reason', text: (o) => o.cancelReason ?? '', csv: (o) => o.cancelReason ?? '' },
   ];

@@ -46,7 +46,7 @@ export default function LedgerPage() {
   const amount = t
     ? { orders: t.buyerGross, buyer: t.buyerGross, seller: t.seller, commission: t.commission, freight: t.freight, paymentAgent: t.paCharge }[kind]
     : undefined;
-  const amountLabel = { orders: 'Selling (incl. GST)', buyer: 'Selling (incl. GST)', seller: 'Buying', commission: 'Commission', freight: 'Freight', paymentAgent: 'Agent charges' }[kind];
+  const amountLabel = { orders: 'Selling (incl. GST)', buyer: 'Selling (incl. GST)', seller: 'Buying', commission: 'Commission', freight: 'Freight', paymentAgent: 'Payment agent charges' }[kind];
 
   const exportCsv = async () => {
     if (!q) return;

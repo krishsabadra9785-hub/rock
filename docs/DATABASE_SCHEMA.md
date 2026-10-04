@@ -96,7 +96,7 @@ Security summary per collection is in the last column; the authoritative source 
 | seller | map | `id, name, ratePaise, amount` |
 | commission | map | `id\|null, name, ratePaise, amount` |
 | freight | map | `id\|null, name, ratePaise, amount, destination` |
-| paymentAgent | map | `id\|null, name, ratePaise, received, deduction, balance` |
+| paymentAgent | map | `id\|null, name, ratePaise, amount`: **commission payable we owe the agent** (amount = qty × ratePaise). *Deprecated, legacy documents only:* `received, deduction, balance` from the obsolete model; read as amount = `deduction`; `received`/`balance` ignored. New orders may not contain them. |
 | buyerId, sellerId, commissionAgentId, transporterId, paymentAgentId | string\|null | flattened for indexed queries |
 | paid | map | `buyer, seller, commission, freight, paymentAgent` — sums of active linked payments (cache maintained transactionally) |
 | rateDecisions | array (≤6) | `{rateType, partyId, defaultValue, value, decision}` |
@@ -106,14 +106,14 @@ Security summary per collection is in the last column; the authoritative source 
 | createdAt/By, updatedAt/By | | |
 
 **Indexes:** `status + dispatchDate + seq` (both directions); `status + <partyId> + dispatchDate desc + seq desc` for each of the five party fields; `searchTokens (contains) + status + dispatchDate desc + seq desc`.
-**Security:** read active. Create by operators: status CONFIRMED, `createdBy == uid`, `paid` all zero, receipt/financial invariants (`gross == base + gst`, `received == gross`, `balance == received − deduction`, `qtyKg > 0`). Update by ADMIN/ACCOUNTS only as (a) paid-only change, (b) versioned correction with invariants, or (c) admin cancellation; identity, number and parties immutable. No delete.
+**Security:** read active. Create by operators: status CONFIRMED, `createdBy == uid`, `paid` all zero, receipt/financial invariants (`gross == base + gst`; seller, commission, freight and payment-agent amounts = qty × rate; payment-agent line has exactly `id, name, ratePaise, amount`). Update by ADMIN/ACCOUNTS only as (a) paid-only change, (b) versioned correction with invariants, or (c) admin cancellation; identity, number and parties immutable. No delete.
 
 ## `payments/{paymentId}`
 Document ID = idempotency key.
 
 | Field | Type | Notes |
 |---|---|---|
-| category | string | `BUYER_RECEIPT`, `SELLER_PAYMENT`, `COMMISSION_PAYMENT`, `TRANSPORTER_PAYMENT`, `PAYMENT_AGENT_SETTLEMENT`, `OTHER` |
+| category | string | `BUYER_RECEIPT` (in), `SELLER_PAYMENT`, `COMMISSION_PAYMENT`, `TRANSPORTER_PAYMENT`, `PAYMENT_AGENT_SETTLEMENT` (out: payment **to** the payment agent; name kept for compatibility), `OTHER` |
 | date | `YYYY-MM-DD` | |
 | amount | int > 0 | |
 | partyId, partyType, partyName | | name snapshot |
@@ -134,8 +134,8 @@ Keys `D-YYYY-MM-DD` (day) and `M-YYYY-MM` (month).
 |---|---|
 | kind | `D` \| `M` |
 | key | date / month |
-| totals | `orders, qtyKg, buyerBase, gst, buyerGross, seller, commission, freight, paCharge, paReceived, paBalance, paid{<category>}` |
-| parties | `{BUYER|SELLER|COMMISSION_AGENT|TRANSPORTER|PAYMENT_AGENT: {<partyId>: {n, qtyKg, amount, paid, base, gst, received, charge}}}` |
+| totals | `orders, qtyKg, buyerBase, gst, buyerGross, seller, commission, freight, paCharge (payment-agent commission), paid{<category>}` |
+| parties | `{BUYER|SELLER|COMMISSION_AGENT|TRANSPORTER|PAYMENT_AGENT: {<partyId>: {n, qtyKg, amount, paid, base, gst}}}`: `amount` is the receivable for buyers and the payable for every other party (payment agent = commission). Legacy docs may also hold `received`/`charge`; these are ignored and removed by Rebuild statistics. |
 
 Updated only via atomic increments inside order/payment transactions; fully rebuildable from orders and payments. **Security:** read active; write operators; delete admin (rebuild).
 

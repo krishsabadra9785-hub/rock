@@ -22,15 +22,15 @@ export interface RollupTotals {
   seller: Paise;
   commission: Paise;
   freight: Paise;
+  /** Payment-agent commission (payable). */
   paCharge: Paise;
-  paReceived: Paise;
-  paBalance: Paise;
   paid: Record<PaymentCategory, Paise>;
 }
 
 /**
  * Per-party figures. `amount` is the party's obligation:
- * buyer gross, seller total, commission, freight, or payment-agent balance.
+ * buyer gross (receivable), seller total, commission, freight or
+ * payment-agent commission (payables).
  */
 export interface PartyBucket {
   n: number;
@@ -41,10 +41,6 @@ export interface PartyBucket {
   base: Paise;
   /** Buyer: GST. */
   gst: Paise;
-  /** Payment agent: amount received from buyers. */
-  received: Paise;
-  /** Payment agent: the agent's charge. */
-  charge: Paise;
 }
 
 export type PartyBuckets = Record<PartyType, Record<string, PartyBucket>>;
@@ -71,14 +67,12 @@ export function emptyTotals(): RollupTotals {
     commission: 0,
     freight: 0,
     paCharge: 0,
-    paReceived: 0,
-    paBalance: 0,
     paid,
   };
 }
 
 export function emptyBucket(): PartyBucket {
-  return { n: 0, qtyKg: 0, amount: 0, paid: 0, base: 0, gst: 0, received: 0, charge: 0 };
+  return { n: 0, qtyKg: 0, amount: 0, paid: 0, base: 0, gst: 0 };
 }
 
 export function emptyParties(): PartyBuckets {
@@ -126,9 +120,7 @@ export function orderContribution(order: OrderForRollup, sign: 1 | -1 = 1): Roll
   totals.seller = s * order.seller.amount;
   totals.commission = s * order.commission.amount;
   totals.freight = s * order.freight.amount;
-  totals.paCharge = s * order.paymentAgent.deduction;
-  totals.paReceived = s * order.paymentAgent.received;
-  totals.paBalance = s * order.paymentAgent.balance;
+  totals.paCharge = s * order.paymentAgent.amount;
 
   const parties = emptyParties();
   const q = s * order.qtyKg;
@@ -150,9 +142,7 @@ export function orderContribution(order: OrderForRollup, sign: 1 | -1 = 1): Roll
     parties.PAYMENT_AGENT[order.paymentAgentId] = bucket({
       n: s,
       qtyKg: q,
-      amount: s * order.paymentAgent.balance,
-      received: s * order.paymentAgent.received,
-      charge: s * order.paymentAgent.deduction,
+      amount: s * order.paymentAgent.amount,
     });
   }
   return { date: order.dispatchDate, totals, parties };
@@ -186,8 +176,6 @@ export function mergeInto(a: RollupData, b: RollupData): RollupData {
   at.commission += bt.commission;
   at.freight += bt.freight;
   at.paCharge += bt.paCharge;
-  at.paReceived += bt.paReceived;
-  at.paBalance += bt.paBalance;
   for (const c of PAYMENT_CATEGORIES) at.paid[c] += bt.paid[c] ?? 0;
   for (const t of PARTY_TYPES) {
     const src = b.parties[t] ?? {};
@@ -201,8 +189,6 @@ export function mergeInto(a: RollupData, b: RollupData): RollupData {
         paid: cur.paid + (bb.paid ?? 0),
         base: cur.base + (bb.base ?? 0),
         gst: cur.gst + (bb.gst ?? 0),
-        received: cur.received + (bb.received ?? 0),
-        charge: cur.charge + (bb.charge ?? 0),
       };
     }
   }
@@ -277,15 +263,13 @@ export interface PartySummary {
   outstanding: Paise;
   base: Paise;
   gst: Paise;
-  received: Paise;
-  charge: Paise;
-  /** Average per-MT rate (buyer: excl. GST; PA: charge per MT). */
+  /** Average per-MT rate (buyer: excl. GST). */
   averageRate: Paise | null;
 }
 
 export function partySummary(data: RollupData, type: PartyType, id: string): PartySummary {
   const b = data.parties[type][id] ?? emptyBucket();
-  const rateBasis = type === 'BUYER' ? b.base : type === 'PAYMENT_AGENT' ? b.charge : b.amount;
+  const rateBasis = type === 'BUYER' ? b.base : b.amount;
   return {
     orders: b.n,
     qtyKg: b.qtyKg,
@@ -294,8 +278,6 @@ export function partySummary(data: RollupData, type: PartyType, id: string): Par
     outstanding: b.amount - b.paid,
     base: b.base,
     gst: b.gst,
-    received: b.received,
-    charge: b.charge,
     averageRate: averageRate(rateBasis, b.qtyKg),
   };
 }
@@ -307,8 +289,6 @@ export interface BreakdownRow {
   amount: Paise;
   paid: Paise;
   outstanding: Paise;
-  received: Paise;
-  charge: Paise;
 }
 
 export function breakdown(data: RollupData, type: PartyType): BreakdownRow[] {
@@ -321,8 +301,6 @@ export function breakdown(data: RollupData, type: PartyType): BreakdownRow[] {
       amount: b.amount,
       paid: b.paid,
       outstanding: b.amount - b.paid,
-      received: b.received,
-      charge: b.charge,
     }))
     .sort((x, y) => y.amount - x.amount);
 }
@@ -343,8 +321,8 @@ export function outstandingSummary(totals: RollupTotals): OutstandingSummary {
   const seller = totals.seller - totals.paid.SELLER_PAYMENT;
   const commission = totals.commission - totals.paid.COMMISSION_PAYMENT;
   const freight = totals.freight - totals.paid.TRANSPORTER_PAYMENT;
-  const paymentAgent = totals.paBalance - totals.paid.PAYMENT_AGENT_SETTLEMENT;
-  return { receivables: buyer, payables: seller + commission + freight, buyer, seller, commission, freight, paymentAgent };
+  const paymentAgent = totals.paCharge - totals.paid.PAYMENT_AGENT_SETTLEMENT;
+  return { receivables: buyer, payables: seller + commission + freight + paymentAgent, buyer, seller, commission, freight, paymentAgent };
 }
 
 export function totalPaidIn(totals: RollupTotals): Paise {
@@ -365,8 +343,6 @@ export function flattenDelta(delta: RollupData): Record<string, number> {
     'commission',
     'freight',
     'paCharge',
-    'paReceived',
-    'paBalance',
   ];
   for (const k of scalar) if (t[k]) out[`totals.${k}`] = t[k];
   for (const c of PAYMENT_CATEGORIES) if (t.paid[c]) out[`totals.paid.${c}`] = t.paid[c];
@@ -391,4 +367,15 @@ export function combineDeltas(deltas: readonly RollupDelta[]): Map<string, Rollu
     }
   }
   return byKey;
+}
+
+/** Differences between stored and recomputed statistics (dotted path → [stored, computed]). */
+export function diffRollups(stored: RollupData, computed: RollupData): Record<string, [number, number]> {
+  const a = flattenDelta(stored);
+  const b = flattenDelta(computed);
+  const out: Record<string, [number, number]> = {};
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if ((a[k] ?? 0) !== (b[k] ?? 0)) out[k] = [a[k] ?? 0, b[k] ?? 0];
+  }
+  return out;
 }

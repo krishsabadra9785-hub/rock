@@ -26,7 +26,7 @@ describe('outstanding & multiple payments', () => {
     expect(obligationAmount(order, 'seller')).toBe(37_364_400);
     expect(obligationAmount(order, 'commission')).toBe(2_792_700);
     expect(obligationAmount(order, 'freight')).toBe(3_274_200);
-    expect(obligationAmount(order, 'paymentAgent')).toBe(46_705_500);
+    expect(obligationAmount(order, 'paymentAgent')).toBe(3_852_000); // commission payable
   });
 
   it('supports several partial freight payments', () => {
@@ -55,7 +55,7 @@ describe('outstanding & multiple payments', () => {
 
   it('categories map to party types and order obligations', () => {
     expect(CATEGORY_META.TRANSPORTER_PAYMENT).toMatchObject({ partyType: 'TRANSPORTER', paidKey: 'freight' });
-    expect(CATEGORY_META.PAYMENT_AGENT_SETTLEMENT).toMatchObject({ partyType: 'PAYMENT_AGENT', paidKey: 'paymentAgent' });
+    expect(CATEGORY_META.PAYMENT_AGENT_SETTLEMENT).toMatchObject({ partyType: 'PAYMENT_AGENT', paidKey: 'paymentAgent', direction: 'OUT', label: 'Payment agent payment' });
     expect(CATEGORY_META.OTHER.paidKey).toBeNull();
   });
 });

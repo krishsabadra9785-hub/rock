@@ -1,6 +1,7 @@
 import { app } from '../firebase/app';
 import { EXTRACTION_PROMPT, parseExtraction, parseModelJson, type ParsedExtraction } from '../domain/extraction';
 import { AppError, errorCode } from './errors';
+import { MODEL_NAME_RE } from '../config/aiStatus';
 import { prepareForAi } from './receiptImage';
 
 /**
@@ -21,6 +22,9 @@ export interface ExtractionOutcome {
 const TIMEOUT_MS = 45_000;
 
 export async function extractReceipt(file: File, modelName: string): Promise<ExtractionOutcome> {
+  if (!MODEL_NAME_RE.test(modelName.trim())) {
+    throw new AppError('No AI model is configured. Set one in Settings → AI receipt reading, or enter the details manually.', 'ai/not-configured');
+  }
   // Loaded lazily so the AI SDK isn't part of the initial download.
   const { getAI, getGenerativeModel, GoogleAIBackend, Schema } = await import('firebase/ai');
 
@@ -74,6 +78,25 @@ export async function extractReceipt(file: File, modelName: string): Promise<Ext
   return { parsed, raw: text, model: modelName };
 }
 
+/**
+ * Sends one tiny text request (a few tokens of free quota) to check that
+ * Firebase AI Logic + the Gemini Developer API answer for this project and model.
+ */
+export async function testAiConnection(modelName: string): Promise<string> {
+  if (!MODEL_NAME_RE.test(modelName.trim())) throw new AppError('Enter a valid model name first', 'ai/not-configured');
+  const { getAI, getGenerativeModel, GoogleAIBackend } = await import('firebase/ai');
+  const model = getGenerativeModel(getAI(app, { backend: new GoogleAIBackend() }), { model: modelName.trim() });
+  try {
+    const result = await Promise.race([
+      model.generateContent('Reply with the single word OK.'),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new AppError('The AI service did not answer in time', 'ai/timeout')), 20_000)),
+    ]);
+    return result.response.text().trim().slice(0, 40) || 'OK';
+  } catch (e) {
+    throw new AppError(aiErrorMessage(e), 'ai/failed');
+  }
+}
+
 function aiErrorMessage(e: unknown): string {
   if (e instanceof AppError) return e.message;
   const code = errorCode(e);
@@ -81,7 +104,10 @@ function aiErrorMessage(e: unknown): string {
   if (/api-not-enabled|not been used|SERVICE_DISABLED|has not been enabled/i.test(msg) || code.includes('api-not-enabled')) {
     return 'AI receipt reading is not enabled for this Firebase project yet (README → Configure AI receipt reading).';
   }
-  if (/app.?check/i.test(msg)) return 'AI request was blocked by App Check. Check the App Check setup in README.';
+  if (/app.?check/i.test(msg)) return 'AI request was blocked by App Check enforcement. Either finish App Check setup (README) or turn enforcement off for Firebase AI Logic.';
+  if (/API_KEY_SERVICE_BLOCKED|api key not valid|are blocked|referer/i.test(msg)) {
+    return 'The Firebase API key is not allowed to call Firebase AI Logic. Check the key restrictions in Google Cloud console (README → Troubleshooting).';
+  }
   if (/quota|429|RESOURCE_EXHAUSTED/i.test(msg)) return 'AI usage limit reached for now. Enter the details manually.';
   if (/not found|404/i.test(msg)) return 'The configured AI model was not found. Check the model name in Settings → AI.';
   if (typeof navigator !== 'undefined' && !navigator.onLine) return 'You are offline, so the receipt could not be read.';

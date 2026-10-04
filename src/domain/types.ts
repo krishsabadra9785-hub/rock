@@ -140,14 +140,13 @@ export interface SimpleLine {
   amount: Paise;
 }
 
-export interface PaymentAgentLine {
-  id: string | null;
-  name: string;
-  ratePaise: Paise;
-  received: Paise;
-  deduction: Paise;
-  balance: Paise;
-}
+/**
+ * Payment agent line: `amount` = qty × rate, a commission WE OWE the agent.
+ * (Orders saved under the obsolete model stored `received`/`deduction`/
+ * `balance` instead; they are read with charge = `deduction` and the old
+ * received/balance values are ignored. See docs/DATABASE_SCHEMA.md.)
+ */
+export type PaymentAgentLine = SimpleLine;
 
 export type PaidKey = 'buyer' | 'seller' | 'commission' | 'freight' | 'paymentAgent';
 export type PaidMap = Record<PaidKey, Paise>;
@@ -180,6 +179,12 @@ export interface Order {
   transporterId: string | null;
   paymentAgentId: string | null;
   paid: PaidMap;
+  /** True when this order still uses the obsolete payment-agent fields (see PaymentAgentLine). */
+  paymentAgentLegacy?: boolean;
+  /** Payment whose creation/void last moved `paid` (required by the security rules). */
+  lastPaymentId: string | null;
+  /** Counter document that allocated the order number, e.g. "orders-2026". */
+  counterId: string | null;
   rateDecisions: RateDecisionRecord[];
   searchTokens: string[];
   notes: string;

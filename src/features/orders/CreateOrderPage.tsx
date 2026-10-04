@@ -532,7 +532,7 @@ export default function CreateOrderPage() {
                 <Field label="Payment agent" htmlFor="pa">
                   <PartySelect id="pa" type="PAYMENT_AGENT" value={paId} onChange={selectPa} allowNone noneLabel="No payment agent" />
                 </Field>
-                <RateField id="r-pa" label="Payment agent rate" state={rates.paymentAgentRate} onChange={(s) => setRate('paymentAgentRate', s)} disabled={!paId} error={partyErrors.paymentAgentRate} total={fin && paId ? formatINR(fin.paymentAgent.deduction) : null} />
+                <RateField id="r-pa" label="Payment agent rate" state={rates.paymentAgentRate} onChange={(s) => setRate('paymentAgentRate', s)} disabled={!paId} error={partyErrors.paymentAgentRate} total={fin && paId ? formatINR(fin.paymentAgent.amount) : null} />
               </div>
             </div>
             <div className="party-block">
@@ -602,7 +602,7 @@ export default function CreateOrderPage() {
                 <dt>Payment agent</dt>
                 <dd>
                   {paId
-                    ? `${byId.get(paId)?.name}: receives ${formatINR(fin.paymentAgent.received)}, keeps ${formatINR(fin.paymentAgent.deduction)} (${formatRate(fin.paymentAgent.ratePaise)}), balance ${formatINR(fin.paymentAgent.balance)}`
+                    ? `${byId.get(paId)?.name}: ${formatRate(fin.paymentAgent.ratePaise)} = ${formatINR(fin.paymentAgent.amount)} commission payable`
                     : 'None'}
                 </dd>
               </dl>

@@ -97,34 +97,35 @@ export function RateField({
   );
 }
 
-/** The haul line: every rupee from the buyer to each payout. */
+/** The haul line: what the buyer owes us, what we owe each party, and what is left. */
 export function MoneyFlow({ fin }: { fin: OrderFinancials }) {
-  const remaining = fin.paymentAgent.balance - fin.seller.amount - fin.commission.amount - fin.freight.amount;
+  const agentsAndFreight = fin.commission.amount + fin.freight.amount + fin.paymentAgent.amount;
+  const remaining = fin.buyer.grossAmount - fin.seller.amount - agentsAndFreight;
   return (
     <div className="flow" aria-label="Money flow">
       <div className="flow-node">
-        <div className="k">Buyer pays (incl. GST)</div>
+        <div className="k">Buyer pays us (incl. GST)</div>
         <div className="v">{formatINR(fin.buyer.grossAmount)}</div>
         <div className="d">
           {formatINR(fin.buyer.baseAmount)} + {formatINR(fin.buyer.gstAmount)} GST
         </div>
       </div>
       <div className="flow-node minus">
-        <div className="k">Payment agent keeps</div>
-        <div className="v">{formatINR(fin.paymentAgent.deduction)}</div>
-        <div className="d">{formatRate(fin.paymentAgent.ratePaise)}</div>
-      </div>
-      <div className="flow-node">
-        <div className="k">Balance passed on</div>
-        <div className="v">{formatINR(fin.paymentAgent.balance)}</div>
-        <div className="d">after agent deduction</div>
+        <div className="k">We pay the seller</div>
+        <div className="v">{formatINR(fin.seller.amount)}</div>
+        <div className="d">{formatRate(fin.seller.ratePaise)}</div>
       </div>
       <div className="flow-node minus">
+        <div className="k">We pay agents & freight</div>
+        <div className="v">{formatINR(agentsAndFreight)}</div>
+        <div className="d">
+          commission {formatINR(fin.commission.amount)}, freight {formatINR(fin.freight.amount)}, payment agent {formatINR(fin.paymentAgent.amount)}
+        </div>
+      </div>
+      <div className="flow-node">
         <div className="k">Left after payouts</div>
         <div className="v">{formatINR(remaining)}</div>
-        <div className="d">
-          after seller {formatINR(fin.seller.amount)}, commission {formatINR(fin.commission.amount)}, freight {formatINR(fin.freight.amount)}; GST not yet settled
-        </div>
+        <div className="d">GST collected is not yet settled</div>
       </div>
     </div>
   );

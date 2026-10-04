@@ -25,11 +25,11 @@ export default function DashboardPage() {
   const v = (n: number | undefined, kind: 'inr' | 'qty' | 'count' = 'inr') =>
     n === undefined ? <Skeleton height={26} width={110} /> : kind === 'qty' ? formatQty(n) : kind === 'count' ? formatCount(n) : formatINR(n);
 
-  const items = (data: RollupData | undefined, type: PartyType, amount: 'amount' | 'charge' = 'amount'): BarItem[] =>
+  const items = (data: RollupData | undefined, type: PartyType): BarItem[] =>
     data
       ? breakdown(data, type)
           .slice(0, 8)
-          .map((r) => ({ id: r.id, name: nameOf(r.id, 'Unknown'), value: r[amount], valueText: formatINR(r[amount]), qtyKg: r.qtyKg }))
+          .map((r) => ({ id: r.id, name: nameOf(r.id, 'Unknown'), value: r.amount, valueText: formatINR(r.amount), qtyKg: r.qtyKg }))
       : [];
   const goParty = (type: PartyType) => (id: string) => navigate(`/${PARTY_LABELS[type].path}/${id}`);
 
@@ -62,8 +62,13 @@ export default function DashboardPage() {
         <Figure label="GST" value={v(t?.gst)} />
         <Figure label="Gross sales" value={v(t?.buyerGross)} />
         <Figure label="Seller value" value={v(t?.seller)} />
-        <Figure label="Payment agent processed" value={v(t?.paReceived)} />
-        <Figure label="Balance after agent deduction" value={v(t?.paBalance)} />
+        <Figure label="Payment agent paid" note="Payments made in period" value={v(t?.paid.PAYMENT_AGENT_SETTLEMENT)} />
+        <Figure
+          label="Payment agent outstanding"
+          note="All time, payable"
+          value={out ? formatINR(out.paymentAgent) : <Skeleton height={22} width={100} />}
+          onClick={() => navigate('/payment-agent')}
+        />
         <Figure
           label="Outstanding receivables"
           note="All time, from buyers"
@@ -72,7 +77,7 @@ export default function DashboardPage() {
         />
         <Figure
           label="Outstanding payables"
-          note="Sellers, agents, transporters"
+          note="Sellers, agents, transporters, payment agent"
           value={out ? formatINR(out.payables) : <Skeleton height={22} width={100} />}
           onClick={() => navigate('/reports?type=outstanding')}
         />
@@ -100,9 +105,9 @@ export default function DashboardPage() {
               <tr>
                 <th>Agent</th>
                 <th className="r">Quantity</th>
-                <th className="r">Amount processed</th>
                 <th className="r">Charges</th>
-                <th className="r">Balance</th>
+                <th className="r">Paid</th>
+                <th className="r">Outstanding</th>
               </tr>
             </thead>
             <tbody>
@@ -111,9 +116,9 @@ export default function DashboardPage() {
                   <tr key={r.id} className="clickable" onClick={() => navigate(`/payment-agents/${r.id}`)}>
                     <td>{nameOf(r.id, 'Unknown')}</td>
                     <td className="r">{formatQty(r.qtyKg)}</td>
-                    <td className="r">{formatINR(r.received)}</td>
-                    <td className="r">{formatINR(r.charge)}</td>
                     <td className="r">{formatINR(r.amount)}</td>
+                    <td className="r">{formatINR(r.paid)}</td>
+                    <td className="r">{formatINR(r.outstanding)}</td>
                   </tr>
                 ))}
             </tbody>
@@ -122,9 +127,9 @@ export default function DashboardPage() {
                 <tr>
                   <td>Total</td>
                   <td className="r">{formatQty(t.qtyKg)}</td>
-                  <td className="r">{formatINR(t.paReceived)}</td>
                   <td className="r">{formatINR(t.paCharge)}</td>
-                  <td className="r">{formatINR(t.paBalance)}</td>
+                  <td className="r">{formatINR(t.paid.PAYMENT_AGENT_SETTLEMENT)}</td>
+                  <td className="r">{formatINR(t.paCharge - t.paid.PAYMENT_AGENT_SETTLEMENT)}</td>
                 </tr>
               </tfoot>
             )}

@@ -11,9 +11,9 @@ import { amountForQuantity, isSafeInt, percentOf, type BasisPoints, type Kg, typ
  *   Seller total        = qty × seller rate (all-inclusive)
  *   Commission          = qty × commission rate
  *   Freight             = qty × freight rate
- *   Payment agent gets  = buyer gross
- *   Payment agent charge= qty × payment-agent rate
- *   Balance passed on   = buyer gross − payment agent charge
+ *   Payment agent charge= qty × payment-agent rate   (a PAYABLE: we owe the agent)
+ *
+ * The buyer pays US directly; buyer money is never routed through the payment agent.
  */
 
 export interface OrderRateInputs {
@@ -40,7 +40,8 @@ export interface OrderFinancials {
   seller: { ratePaise: Paise; amount: Paise };
   commission: { ratePaise: Paise; amount: Paise };
   freight: { ratePaise: Paise; amount: Paise };
-  paymentAgent: { ratePaise: Paise; received: Paise; deduction: Paise; balance: Paise };
+  /** Payment agent commission: a payable we owe the agent (qty × rate). */
+  paymentAgent: { ratePaise: Paise; amount: Paise };
 }
 
 export class CalculationError extends Error {
@@ -78,7 +79,6 @@ export function calculateOrder(inputs: OrderRateInputs): OrderFinancials {
   const gstAmount = percentOf(baseAmount, inputs.gstBp);
   const grossAmount = baseAmount + gstAmount;
 
-  const paDeduction = amountForQuantity(qtyKg, inputs.paymentAgentRatePaise);
 
   return {
     qtyKg,
@@ -98,9 +98,7 @@ export function calculateOrder(inputs: OrderRateInputs): OrderFinancials {
     freight: { ratePaise: inputs.freightRatePaise, amount: amountForQuantity(qtyKg, inputs.freightRatePaise) },
     paymentAgent: {
       ratePaise: inputs.paymentAgentRatePaise,
-      received: grossAmount,
-      deduction: paDeduction,
-      balance: grossAmount - paDeduction,
+      amount: amountForQuantity(qtyKg, inputs.paymentAgentRatePaise),
     },
   };
 }

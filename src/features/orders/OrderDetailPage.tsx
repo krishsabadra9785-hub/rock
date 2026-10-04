@@ -22,10 +22,10 @@ import { MoneyFlow } from './orderParts';
 
 const OBLIGATIONS: { key: PaidKey; label: string; category: PaymentCategory; path: string }[] = [
   { key: 'buyer', label: 'Receivable from buyer', category: 'BUYER_RECEIPT', path: 'buyers' },
-  { key: 'paymentAgent', label: 'Due from payment agent', category: 'PAYMENT_AGENT_SETTLEMENT', path: 'payment-agents' },
   { key: 'seller', label: 'Payable to seller', category: 'SELLER_PAYMENT', path: 'sellers' },
   { key: 'commission', label: 'Commission payable', category: 'COMMISSION_PAYMENT', path: 'commission-agents' },
   { key: 'freight', label: 'Freight payable', category: 'TRANSPORTER_PAYMENT', path: 'transporters' },
+  { key: 'paymentAgent', label: 'Payment agent commission payable', category: 'PAYMENT_AGENT_SETTLEMENT', path: 'payment-agents' },
 ];
 
 function partyFor(o: Order, key: PaidKey): { id: string | null; name: string } {
@@ -191,7 +191,7 @@ export default function OrderDetailPage() {
             <dt>Freight</dt>
             <dd>{order.transporterId ? <><Link to={`/transporters/${order.transporterId}`}>{order.freight.name}</Link>: {formatRate(order.freight.ratePaise)} = {formatINR(order.freight.amount)}</> : 'None'}</dd>
             <dt>Payment agent</dt>
-            <dd>{order.paymentAgentId ? <><Link to={`/payment-agents/${order.paymentAgentId}`}>{order.paymentAgent.name}</Link>: {formatRate(order.paymentAgent.ratePaise)}, keeps {formatINR(order.paymentAgent.deduction)}, balance {formatINR(order.paymentAgent.balance)}</> : 'None'}</dd>
+            <dd>{order.paymentAgentId ? <><Link to={`/payment-agents/${order.paymentAgentId}`}>{order.paymentAgent.name}</Link>: {formatRate(order.paymentAgent.ratePaise)} = {formatINR(order.paymentAgent.amount)} commission payable</> : 'None'}</dd>
           </dl>
           {order.rateDecisions.some((r) => r.decision === 'NEW_DEFAULT') && (
             <p className="small muted" style={{ marginTop: 10 }}>

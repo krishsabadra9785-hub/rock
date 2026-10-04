@@ -134,7 +134,7 @@ export function EditOrderDialog({ order, onClose }: { order: Order; onClose: () 
         </div>
         {fin && (
           <Notice>
-            New buyer total {formatINR(fin.buyer.grossAmount)} (was {formatINR(order.buyer.grossAmount)}); seller {formatINR(fin.seller.amount)}; balance after payment agent {formatINR(fin.paymentAgent.balance)}.
+            New buyer total {formatINR(fin.buyer.grossAmount)} (was {formatINR(order.buyer.grossAmount)}); seller {formatINR(fin.seller.amount)}; payment agent commission {formatINR(fin.paymentAgent.amount)}.
           </Notice>
         )}
         {error && <Notice tone="danger">{error}</Notice>}

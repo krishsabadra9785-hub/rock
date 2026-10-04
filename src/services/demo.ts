@@ -87,7 +87,7 @@ export async function seedDemoData(orderPrefix: string, onProgress: (msg: string
       freightRate: { rateType: 'FREIGHT_RATE', partyId: transporterId, defaultValue: r('850'), value: r('850'), decision: keep },
       paymentAgentRate: { rateType: 'PAYMENT_AGENT_RATE', partyId: paId, defaultValue: r('1000'), value: r('1000'), decision: keep },
     },
-    notes: 'Demo order — expected buyer total ₹5,05,575, balance after payment agent ₹4,67,055.',
+    notes: 'Demo order — buyer owes ₹5,05,575; payment agent commission payable ₹38,520.',
     demo: true,
   });
 

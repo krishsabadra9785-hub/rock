@@ -47,16 +47,14 @@ describe('reference order 38.52 MT', () => {
     expect(r.freight.amount).toBe(3_274_200);
     expect(formatINR(r.freight.amount)).toBe('₹32,742');
   });
-  it('payment agent receives the buyer total', () => {
-    expect(r.paymentAgent.received).toBe(r.buyer.grossAmount);
+  it('payment agent commission = ₹38,520 (a payable we owe the agent)', () => {
+    expect(r.paymentAgent).toEqual({ ratePaise: 100_000, amount: 3_852_000 });
+    expect(formatINR(r.paymentAgent.amount)).toBe('₹38,520');
   });
-  it('payment agent deduction = ₹38,520', () => {
-    expect(r.paymentAgent.deduction).toBe(3_852_000);
-    expect(formatINR(r.paymentAgent.deduction)).toBe('₹38,520');
-  });
-  it('balance after deduction = ₹4,67,055', () => {
-    expect(r.paymentAgent.balance).toBe(46_705_500);
-    expect(formatINR(r.paymentAgent.balance)).toBe('₹4,67,055');
+  it('the buyer gross is NOT assigned to the payment agent; no "balance after deduction" exists', () => {
+    expect(r.buyer.grossAmount).toBe(50_557_500);
+    expect(Object.keys(r.paymentAgent).sort()).toEqual(['amount', 'ratePaise']);
+    expect(JSON.stringify(r).includes('46705500')).toBe(false);
   });
   it('stores base, GST and gross separately and they reconcile', () => {
     expect(r.buyer.baseAmount + r.buyer.gstAmount).toBe(r.buyer.grossAmount);
@@ -119,6 +117,12 @@ describe('validation inside calculation', () => {
   it('rejects NaN and fractional base units', () => {
     expect(() => calculateOrder({ ...REFERENCE, qtyKg: Number.NaN })).toThrow(CalculationError);
     expect(() => calculateOrder({ ...REFERENCE, buyerRatePaise: 12.5 })).toThrow(CalculationError);
+  });
+  it('payment-agent commission is independent of the buyer amount', () => {
+    // Even a commission above the buyer total is just a (large) payable; nothing is deducted from buyer money.
+    const big = calculateOrder({ ...REFERENCE, paymentAgentRatePaise: 1_400_000 });
+    expect(big.paymentAgent.amount).toBe(53_928_000);
+    expect(big.buyer.grossAmount).toBe(50_557_500);
   });
   it('tryCalculateOrder returns null instead of throwing', () => {
     expect(tryCalculateOrder({ qtyKg: 0 })).toBeNull();

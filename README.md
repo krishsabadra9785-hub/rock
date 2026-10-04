@@ -31,7 +31,7 @@ It costs nothing to run: the website is hosted free on **GitHub Pages**, and dat
 ## 1. What ROCK does
 
 - **Create order**: photograph the weighbridge slip or challan, and ROCK reads net quantity, driver, phone, vehicle, date, slip number and destination with Google's Gemini AI. You check and correct every field, then pick the buyer, seller, agent, transporter and payment agent. Rates fill in automatically.
-- **Calculates everything**: buyer amount, GST, seller amount, commission, freight, the payment agent's charge, and the balance after it. Example for 38.52 MT: buyer ₹5,05,575 incl. GST, payment agent keeps ₹38,520, balance ₹4,67,055.
+- **Calculates everything**: buyer amount and GST (what the buyer owes us), and what we owe the seller, commission agent, transporter and payment agent. Example for 38.52 MT: the buyer owes us ₹5,05,575 incl. GST, and we owe the payment agent its commission of ₹38,520 (38.52 × ₹1,000).
 - **Remembers rates**: when you change a rate on an order you choose *This order only* or *New default going forward*. Old orders never change.
 - **Payments**: record any number of part payments per order; outstanding balances update automatically.
 - **Dashboards, ledgers, reports**: by day, week, month, financial year (April–March by default), custom range or all time. CSV export (opens in Excel) and print / save as PDF.
@@ -180,13 +180,29 @@ Open **http://localhost:5173/rock/** in your browser. Stop it with `Ctrl + C`.
 ## 6. Test and build
 
 ```bash
-npm run test        # automated tests, including every figure of the 38.52 MT example
+npm test            # automated tests, including every figure of the 38.52 MT example
+npm run test:rules  # security-rules tests on the Firestore emulator (needs Java 21, see below)
 npm run typecheck   # checks the code for type errors
 npm run lint        # code style checks
 npm run build       # creates the production website in the dist/ folder
 npm run preview     # serves the built site at http://localhost:4173/rock/
 npm run check       # all of the above in one go
 ```
+
+### Security-rules tests (recommended before publishing rules)
+
+These run the real `firestore.rules` against Google's local Firestore emulator. That needs no Firebase project and no billing, but it does need **Java 21**:
+
+```bash
+# Mac (with Homebrew: https://brew.sh)
+brew install openjdk@21
+echo 'export PATH="/opt/homebrew/opt/openjdk@21/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+java -version
+npm run test:rules:install   # once (and after dependency changes); creates tests/rules/package-lock.json — commit it
+npm run test:rules
+```
+
+GitHub Actions also runs them on every push. The website is only published if both the app tests and the rules tests pass.
 
 ## 7. Publish on GitHub Pages
 
@@ -250,6 +266,7 @@ The first time you sign in, ROCK shows "Your account isn't set up in ROCK yet" w
 | `role` | string | `ADMIN` |
 | `active` | boolean | `true` |
 
+   Add **only** these four fields. The security rules reject profile documents with extra fields when an administrator edits them later.
 5. Save, go back to ROCK, sign in again with Login ID `owner` and your password, and create your 4-digit PIN.
 
 Then, inside ROCK:
@@ -330,7 +347,8 @@ Open **Actions → the failed run → the red step** and read the last lines.
 |---|---|---|
 | **Check Firebase configuration variables** | A repository variable is missing | Add it (step 7.2), then **Actions → the run → Re-run all jobs** |
 | **Install dependencies** says `npm ci` can only install with an existing lock file / lock file out of sync | `package-lock.json` doesn't match `package.json` | On your computer run `npm install`, commit the updated `package-lock.json`, push |
-| **Type check** or **Tests** | A code change broke something | Run `npm run check` locally, fix what it reports, push again |
+| **Type check**, **Lint** or **Tests** | A code change broke something | Run `npm run check` locally, fix what it reports, push again |
+| **Firestore security rules tests** (job "rules") | A rules test failed, or the emulator couldn't start | Run `npm run test:rules` locally (needs Java 21) and read which test failed |
 | **Deploy to GitHub Pages**: "Get Pages site failed" / "Not Found" | Pages source isn't set to GitHub Actions | Step 7.1, then re-run |
 | **Deploy**: "Branch is not allowed to deploy to github-pages" | Environment protection rule | Settings → Environments → github-pages → Deployment branches → allow `main` |
 
@@ -368,12 +386,17 @@ Run `npm run deploy:rules`, or open the browser's developer console (F12) where 
 | "blocked by App Check" | Check the reCAPTCHA keys (3.5); for localhost register the debug token |
 | "usage limit reached" | Free quota exhausted; enter manually, try later, or pick a lighter model in Settings |
 | "model was not found" | Change the model name in Settings → AI receipt reading |
+| "API key is not allowed to call Firebase AI Logic" | Google Cloud console → APIs & Services → Credentials → your Browser key: if it has API restrictions, add **Firebase AI Logic API** |
+
+**Settings → AI receipt reading** shows the real status. **Configured** means the Firebase settings and a model name are present. **Test AI connection** sends one tiny request to prove it works end to end. App Check is shown separately and is optional; leaving it off never disables AI.
 
 You can always create orders manually.
 
 ### Figures on the dashboard look wrong
 
-**Settings → Data → Rebuild statistics** recalculates all summaries from the original orders and payments.
+**Orders saved before the payment-agent change.** If any exist, run **Settings → Data → Upgrade old records** once, then **Rebuild statistics**. Both are safe to repeat.
+
+**Settings → Data → Check figures** recalculates every total from the original orders and active payments and reports any difference without changing anything. **Rebuild statistics** then repairs dashboard summaries. Running *Check figures* once a month is a good habit.
 
 ## 15. Project structure
 

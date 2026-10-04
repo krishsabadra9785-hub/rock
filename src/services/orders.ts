@@ -18,9 +18,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/app';
 import { calculateOrder, type OrderFinancials } from '../domain/calc';
+import { amountForQuantity } from '../domain/money';
 import { todayISO, yearOf, type DateRange } from '../domain/dates';
 import { formatOrderNumber, nextSequence, orderCounterId } from '../domain/orderNumber';
-import { emptyPaid } from '../domain/payments';
+import { emptyPaid, invalidPaidKeys } from '../domain/payments';
 import { buildRateHistoryEntry, defaultRateFor, RATE_META, resolveRateSelection, type RateSelection } from '../domain/rates';
 import { orderContribution } from '../domain/rollups';
 import { buildSearchTokens } from '../domain/search';
@@ -109,13 +110,14 @@ export function toOrder(id: string, d: DocumentData): Order {
     seller: line(d.seller),
     commission: line(d.commission),
     freight: { ...line(d.freight), destination: str(fr.destination) },
+    // Payment agent commission (payable). Orders saved under the obsolete model
+    // have no `amount`; their charge was stored as `deduction`. Their old
+    // `received`/`balance` values are deliberately NOT read or shown.
     paymentAgent: {
       id: strOrNull(pa.id),
       name: str(pa.name),
       ratePaise: num(pa.ratePaise),
-      received: num(pa.received),
-      deduction: num(pa.deduction),
-      balance: num(pa.balance),
+      amount: typeof pa.amount === 'number' ? pa.amount : num(pa.deduction),
     },
     buyerId: str(d.buyerId),
     sellerId: str(d.sellerId),
@@ -123,6 +125,9 @@ export function toOrder(id: string, d: DocumentData): Order {
     transporterId: strOrNull(d.transporterId),
     paymentAgentId: strOrNull(d.paymentAgentId),
     paid: toPaid(d.paid),
+    paymentAgentLegacy: typeof pa.amount !== 'number' && (typeof pa.deduction === 'number' || typeof pa.balance === 'number'),
+    lastPaymentId: strOrNull(d.lastPaymentId),
+    counterId: strOrNull(d.counterId),
     rateDecisions: Array.isArray(d.rateDecisions) ? (d.rateDecisions as RateDecisionRecord[]) : [],
     searchTokens: Array.isArray(d.searchTokens) ? (d.searchTokens as string[]) : [],
     notes: str(d.notes),
@@ -161,9 +166,7 @@ function financialFields(f: OrderFinancials) {
     freight: { ratePaise: f.freight.ratePaise, amount: f.freight.amount },
     paymentAgent: {
       ratePaise: f.paymentAgent.ratePaise,
-      received: f.paymentAgent.received,
-      deduction: f.paymentAgent.deduction,
-      balance: f.paymentAgent.balance,
+      amount: f.paymentAgent.amount,
     },
   };
 }
@@ -306,15 +309,39 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     const agent = parties.get('COMMISSION_AGENT') ?? null;
     const transporter = parties.get('TRANSPORTER') ?? null;
     const pa = parties.get('PAYMENT_AGENT') ?? null;
+    // Only confirmed text fields + image METADATA. Never image content.
+    // Optional text is stored as '' (not null) and sizes as integers: the
+    // security rules check all receipt text with one string-length test.
+    if (input.receipt.image.provider !== 'NONE') {
+      throw new AppError('Receipt image storage is not enabled in this version of ROCK');
+    }
     const receipt: ReceiptSnapshot = {
-      ...input.receipt,
-      vehicleNumber: normalizeVehicleNumber(input.receipt.vehicleNumber),
-      ai: { ...input.receipt.ai, raw: input.receipt.ai.raw ? input.receipt.ai.raw.slice(0, MAX_RAW_AI) : null },
+      image: {
+        provider: 'NONE',
+        ref: null,
+        fileName: (input.receipt.image.fileName ?? '').slice(0, 120),
+        contentType: (input.receipt.image.contentType ?? '').slice(0, 60),
+        sizeBytes: Number.isSafeInteger(input.receipt.image.sizeBytes) ? (input.receipt.image.sizeBytes as number) : 0,
+      },
+      receiptNumber: input.receipt.receiptNumber.trim().slice(0, 120),
+      driverName: input.receipt.driverName.trim().slice(0, 120),
+      driverPhone: input.receipt.driverPhone.trim(),
+      vehicleNumber: normalizeVehicleNumber(input.receipt.vehicleNumber).slice(0, 20),
+      destination: input.receipt.destination.trim().slice(0, 120),
+      dispatchDate: input.receipt.dispatchDate,
+      netQtyKg: input.receipt.netQtyKg,
+      ai: {
+        status: input.receipt.ai.status,
+        model: (input.receipt.ai.model ?? '').slice(0, 80),
+        raw: (input.receipt.ai.raw ?? '').slice(0, MAX_RAW_AI),
+        error: (input.receipt.ai.error ?? '').slice(0, 500),
+      },
     };
     const f = financialFields(fin);
     const orderData = {
       orderNumber,
       seq,
+      counterId: counterRef.id,
       status: 'CONFIRMED' as OrderStatus,
       dispatchDate: receipt.dispatchDate,
       qtyKg: fin.qtyKg,
@@ -330,6 +357,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       transporterId: transporter?.id ?? null,
       paymentAgentId: pa?.id ?? null,
       paid: emptyPaid(),
+      lastPaymentId: null,
       rateDecisions: Object.values(resolved)
         .filter((r): r is NonNullable<typeof r> => r !== null)
         .map((r) => r.record),
@@ -360,8 +388,11 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
       const party = parties.get(meta.partyType)!;
       const current = defaultRateFor(party.rates, r.record.rateType);
       if (current === r.newDefault) continue;
+      const historyRef = doc(collection(db, COL.rateHistory));
       const u = updatesByParty.get(party.id) ?? {};
       u[`rates.${r.record.rateType}`] = r.newDefault;
+      // Links the default change to its (new) history entry; required by the rules.
+      u.lastRateChangeId = historyRef.id;
       updatesByParty.set(party.id, u);
       const h = buildRateHistoryEntry({
         partyId: party.id,
@@ -375,7 +406,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         sourceOrderNumber: orderNumber,
         reason: `Set as new default on order ${orderNumber}`,
       });
-      tx.set(doc(collection(db, COL.rateHistory)), { ...h, createdAt: serverTimestamp() });
+      tx.set(historyRef, { ...h, createdAt: serverTimestamp() });
     }
     for (const [pid, u] of updatesByParty) tx.update(doc(db, COL.parties, pid), { ...u, ...updatedFields(uid) });
 
@@ -543,8 +574,8 @@ export async function editOrder(id: string, input: OrderEditInput): Promise<void
       receiptNumber: input.receiptNumber.trim(),
       driverName: input.driverName.trim(),
       driverPhone: input.driverPhone.trim(),
-      vehicleNumber: normalizeVehicleNumber(input.vehicleNumber),
-      destination: input.destination.trim(),
+      vehicleNumber: normalizeVehicleNumber(input.vehicleNumber).slice(0, 20),
+      destination: input.destination.trim().slice(0, 120),
       dispatchDate: input.dispatchDate,
       netQtyKg: fin.qtyKg,
     };
@@ -579,8 +610,13 @@ export async function editOrder(id: string, input: OrderEditInput): Promise<void
     track('commission.ratePaise', before.commission.ratePaise, after.commission.ratePaise);
     track('freight.ratePaise', before.freight.ratePaise, after.freight.ratePaise);
     track('paymentAgent.ratePaise', before.paymentAgent.ratePaise, after.paymentAgent.ratePaise);
+    track('paymentAgent.amount', before.paymentAgent.amount, after.paymentAgent.amount);
     track('notes', before.notes, after.notes);
     if (Object.keys(changes).length === 0) throw new AppError('Nothing was changed');
+    const tooLow = invalidPaidKeys(after);
+    if (tooLow.length > 0) {
+      throw new AppError(`This correction makes an amount smaller than what has already been paid (${tooLow.join(', ')}). Void the extra payment first.`);
+    }
 
     tx.update(ref, {
       dispatchDate: after.dispatchDate,
@@ -635,4 +671,64 @@ export async function cancelOrder(id: string, reason: string): Promise<void> {
     writeRollupDeltas(tx, [orderContribution(o, -1)]);
     writeAudit(tx, uid, { entityType: 'order', entityId: id, action: 'CANCEL', summary: `Cancelled ${o.orderNumber}`, reason: why });
   });
+}
+
+// ---------------------------------------------------------------------------
+// One-off upgrade of orders saved under the obsolete payment-agent model
+// ---------------------------------------------------------------------------
+
+export interface PaymentAgentUpgradeReport {
+  scanned: number;
+  upgraded: string[];
+  alreadyCurrent: number;
+  /** Orders whose recorded payment-agent payments exceed the new commission: review manually. */
+  needsReview: { orderNumber: string; paid: number; commission: number }[];
+}
+
+/**
+ * Rewrites the payment-agent line of each CONFIRMED legacy order to the
+ * current shape {id, name, ratePaise, amount} where amount = qty × the order's
+ * own snapshotted rate (identical to its old `deduction`). Uses the audited
+ * correction path (version + 1, audit entry), so security rules re-validate
+ * every figure. Idempotent: already-upgraded orders are skipped.
+ * Cancelled orders are final and keep their old fields (read-compatible).
+ */
+export async function upgradeLegacyPaymentAgentOrders(onProgress?: (msg: string) => void): Promise<PaymentAgentUpgradeReport> {
+  const uid = requireUid();
+  const report: PaymentAgentUpgradeReport = { scanned: 0, upgraded: [], alreadyCurrent: 0, needsReview: [] };
+  const { orders } = await queryAllOrders({ range: { from: null, to: null }, status: 'CONFIRMED' }, 100_000);
+  for (const listed of orders) {
+    report.scanned++;
+    if (!listed.paymentAgentLegacy) {
+      report.alreadyCurrent++;
+      continue;
+    }
+    const ref = doc(db, COL.orders, listed.id);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return;
+      const o = toOrder(snap.id, snap.data());
+      if (!o.paymentAgentLegacy || o.status !== 'CONFIRMED') return;
+      const amount = amountForQuantity(o.qtyKg, o.paymentAgent.ratePaise);
+      if (o.paid.paymentAgent > amount) {
+        report.needsReview.push({ orderNumber: o.orderNumber, paid: o.paid.paymentAgent, commission: amount });
+        return;
+      }
+      tx.update(ref, {
+        paymentAgent: { id: o.paymentAgent.id, name: o.paymentAgent.name, ratePaise: o.paymentAgent.ratePaise, amount },
+        version: o.version + 1,
+        ...updatedFields(uid),
+      });
+      writeAudit(tx, uid, {
+        entityType: 'order',
+        entityId: o.id,
+        action: 'EDIT',
+        summary: `Upgraded ${o.orderNumber} to the current payment-agent model (commission payable)`,
+        reason: 'Payment agent model change: buyer pays us directly; agent commission is a payable',
+      });
+      report.upgraded.push(o.orderNumber);
+    });
+    onProgress?.(`Checked ${report.scanned} of ${orders.length} orders…`);
+  }
+  return report;
 }

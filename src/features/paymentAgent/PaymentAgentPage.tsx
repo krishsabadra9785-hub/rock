@@ -16,7 +16,7 @@ import { useSession } from '../../state/SessionProvider';
 import { ledgerColumns } from '../ledger/columns';
 import { useOrderPages } from '../ledger/useOrderPages';
 
-/** Dedicated Payment Agent dashboard: buyer money in, agent's per-MT charge out, balance passed on. */
+/** Dedicated Payment Agent dashboard: the agent's per-MT commission is a payable — what WE owe the agent. */
 export default function PaymentAgentPage() {
   const { ofType } = useData();
   const { settings } = useSession();
@@ -30,7 +30,7 @@ export default function PaymentAgentPage() {
     selected ? { range: dr.range, status: 'CONFIRMED', party: { type: 'PAYMENT_AGENT', id: selected }, pageSize: 100 } : null,
     `${selected}|${dr.range.from}|${dr.range.to}`,
   );
-  const settlements = useAsync(
+  const agentPayments = useAsync(
     () => (selected ? queryPayments({ range: dr.range, partyId: selected, category: 'PAYMENT_AGENT_SETTLEMENT', pageSize: 500 }) : Promise.resolve({ payments: [], cursor: null })),
     [selected, dr.range.from, dr.range.to],
   );
@@ -46,13 +46,14 @@ export default function PaymentAgentPage() {
   const p = period.data && selected ? partySummary(period.data, 'PAYMENT_AGENT', selected) : undefined;
   const l = lifetime.data && selected ? partySummary(lifetime.data, 'PAYMENT_AGENT', selected) : undefined;
   const sk = <Skeleton height={26} width={110} />;
-  const activeSettlements = settlements.data?.payments.filter((x) => x.status === 'ACTIVE') ?? [];
+  const activePayments = agentPayments.data?.payments.filter((x) => x.status === 'ACTIVE') ?? [];
+  const paidInPeriod = activePayments.reduce((sum, x) => sum + x.amount, 0);
 
   return (
     <div className="stack">
       <PageHeader
         title="Payment agent"
-        sub="Buyers pay the agent; the agent keeps a per-MT charge and passes the balance on"
+        sub="We pay the agent a commission per MT on each order. Buyers pay us directly."
         actions={selected && <ButtonLink to={`/payment-agents/${selected}`}>Open profile</ButtonLink>}
       />
       <div className="filters no-print">
@@ -65,12 +66,11 @@ export default function PaymentAgentPage() {
       <DateFilter state={dr} />
       {period.error && <ErrorNotice error={period.error} onRetry={period.reload} />}
       <div className="figures">
-        <Figure lead label="Total amount processed" value={p ? formatINR(p.received) : sk} />
+        <Figure lead label="Payment agent charges" note="Commission on orders in period" value={p ? formatINR(p.amount) : sk} />
         <Figure label="Total quantity" value={p ? formatQty(p.qtyKg) : sk} />
-        <Figure label="Total agent charges" value={p ? formatINR(p.charge) : sk} />
-        <Figure lead label="Total balance after deduction" value={p ? formatINR(p.amount) : sk} />
-        <Figure label="Settlement payments" note={activeSettlements.length ? formatINR(activeSettlements.reduce((s, x) => s + x.amount, 0)) : 'recorded in period'} value={settlements.data ? formatCount(activeSettlements.length) : sk} />
-        <Figure label="Pending settlement" note="All time" value={l ? formatINR(l.outstanding) : sk} />
+        <Figure label="Paid to agent" note="Payments made in period" value={agentPayments.data ? formatINR(paidInPeriod) : sk} />
+        <Figure label="Number of payments" value={agentPayments.data ? formatCount(activePayments.length) : sk} />
+        <Figure lead label="Outstanding payable" note="All time, what we owe" value={l ? formatINR(l.outstanding) : sk} />
       </div>
       <Panel bodyless title={`Ledger, ${describeRange(dr.range)}`} actions={<ButtonLink size="sm" to={`/ledger/paymentAgent?party=${selected ?? ''}&from=${dr.range.from ?? ''}&to=${dr.range.to ?? ''}`}>Full ledger & export</ButtonLink>}>
         <DataTable

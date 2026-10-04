@@ -53,11 +53,10 @@ describe('rollup contributions', () => {
       commission: 2_792_700,
       freight: 3_274_200,
       paCharge: 3_852_000,
-      paReceived: 50_557_500,
-      paBalance: 46_705_500,
     });
     expect(d.parties.BUYER.B1).toMatchObject({ n: 1, amount: 50_557_500, base: 48_150_000 });
-    expect(d.parties.PAYMENT_AGENT.P1).toMatchObject({ amount: 46_705_500, charge: 3_852_000, received: 50_557_500 });
+    expect(d.parties.PAYMENT_AGENT.P1).toMatchObject({ n: 1, qtyKg: 38_520, amount: 3_852_000 });
+    expect(d.totals.paCharge).toBe(3_852_000);
   });
 
   it('cancellation (sign −1) exactly reverses the order', () => {
@@ -99,8 +98,9 @@ describe('rollup contributions', () => {
     ]);
     const o = outstandingSummary(data.totals);
     expect(o.receivables).toBe(0);
-    expect(o.payables).toBe(37_364_400 + 2_792_700 + 3_274_200);
-    expect(o.paymentAgent).toBe(46_705_500);
+    // payables = seller + commission + freight + payment-agent commission (no buyer money double-counted)
+    expect(o.payables).toBe(37_364_400 + 2_792_700 + 3_274_200 + 3_852_000);
+    expect(o.paymentAgent).toBe(3_852_000);
   });
 
   it('breakdown groups by party and sorts by amount', () => {
@@ -117,7 +117,7 @@ describe('rollup contributions', () => {
     const flat = flattenDelta(orderContribution(order('2026-10-03')));
     expect(flat['totals.buyerGross']).toBe(50_557_500);
     expect(flat['parties.BUYER.B1.amount']).toBe(50_557_500);
-    expect(flat['parties.SELLER.S1.received']).toBeUndefined();
+    expect(flat['parties.SELLER.S1.base']).toBeUndefined();
     expect(Object.values(flat).every((v) => v !== 0)).toBe(true);
   });
 
@@ -136,6 +136,22 @@ describe('rollup contributions', () => {
     expect(acc.totals.orders).toBe(2);
     expect(acc.totals.paid.BUYER_RECEIPT).toBe(0);
     expect(acc.parties.BUYER.X).toMatchObject({ n: 1, amount: 0 });
+  });
+});
+
+describe('payment agent statistics (payable model)', () => {
+  it('PA charges, payments, void and outstanding payable; buyer receivable unaffected', () => {
+    const pay = { date: '2026-10-04', amount: 1_000_000, category: 'PAYMENT_AGENT_SETTLEMENT' as const, partyId: 'P1', partyType: 'PAYMENT_AGENT' as const };
+    const afterPay = sumRollups([orderContribution(order('2026-10-03')), paymentContribution(pay)]);
+    expect(partySummary(afterPay, 'PAYMENT_AGENT', 'P1')).toMatchObject({ amount: 3_852_000, paid: 1_000_000, outstanding: 2_852_000, averageRate: 100_000 });
+    expect(outstandingSummary(afterPay.totals)).toMatchObject({ paymentAgent: 2_852_000, receivables: 50_557_500 });
+    const afterVoid = sumRollups([orderContribution(order('2026-10-03')), paymentContribution(pay), paymentContribution(pay, -1)]);
+    expect(partySummary(afterVoid, 'PAYMENT_AGENT', 'P1').outstanding).toBe(3_852_000);
+  });
+  it('totals carry no buyer-gross "processed" or "balance" figures for the payment agent', () => {
+    const d = orderContribution(order('2026-10-03'));
+    expect(Object.keys(d.totals).some((k) => /paReceived|paBalance/.test(k))).toBe(false);
+    expect(Object.keys(d.parties.PAYMENT_AGENT.P1!).sort()).toEqual(['amount', 'base', 'gst', 'n', 'paid', 'qtyKg']);
   });
 });
 

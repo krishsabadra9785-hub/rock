@@ -51,7 +51,7 @@ export default function PartyListPage({ type }: { type: PartyType }) {
     cols.push(
       { id: 'orders', header: 'Orders', align: 'right', text: (p) => formatCount(sum(p)?.orders ?? 0), csv: (p) => sum(p)?.orders ?? 0, sortValue: (p) => sum(p)?.orders ?? 0 },
       { id: 'qty', header: 'Qty (MT)', align: 'right', text: (p) => formatQtyNumber(sum(p)?.qtyKg ?? 0), csv: (p) => sum(p)?.qtyKg ?? 0, sortValue: (p) => sum(p)?.qtyKg ?? 0 },
-      { id: 'out', header: type === 'PAYMENT_AGENT' ? 'Pending' : 'Outstanding', align: 'right', text: (p) => formatINR(sum(p)?.outstanding ?? 0), csv: (p) => sum(p)?.outstanding ?? 0, sortValue: (p) => sum(p)?.outstanding ?? 0 },
+      { id: 'out', header: 'Outstanding', align: 'right', text: (p) => formatINR(sum(p)?.outstanding ?? 0), csv: (p) => sum(p)?.outstanding ?? 0, sortValue: (p) => sum(p)?.outstanding ?? 0 },
       { id: 'status', header: 'Status', text: (p) => (p.active ? 'Active' : 'Inactive'), csv: (p) => (p.active ? 'Active' : 'Inactive') },
     );
     return cols;
