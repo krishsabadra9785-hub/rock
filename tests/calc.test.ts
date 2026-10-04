@@ -75,7 +75,8 @@ describe('GST', () => {
   });
   it('handles fractional GST like 2.5% with half-up rounding', () => {
     // 0.333 MT × ₹101 = ₹33.633 → 3363.3 paise → 3363; GST 2.5% = 84.075 → 84 paise
-    const r = calculateOrder({ ...REFERENCE, qtyKg: 333, buyerRatePaise: 10_100, gstBp: 250 });
+    // Payment-agent rate 0: at this tiny value the ₹1,000/MT charge would exceed the buyer total.
+    const r = calculateOrder({ ...REFERENCE, qtyKg: 333, buyerRatePaise: 10_100, gstBp: 250, paymentAgentRatePaise: 0 });
     expect(r.buyer.baseAmount).toBe(3363);
     expect(r.buyer.gstAmount).toBe(84);
   });
