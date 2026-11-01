@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const out = lifetime.data ? outstandingSummary(lifetime.data.totals) : null;
   const v = (n: number | undefined, kind: 'inr' | 'qty' | 'count' = 'inr') =>
     n === undefined ? <Skeleton height={26} width={110} /> : kind === 'qty' ? formatQty(n) : kind === 'count' ? formatCount(n) : formatINR(n);
+  const allTime = (n: number | undefined) => (n === undefined ? <Skeleton height={28} width={130} /> : formatINR(n));
 
   const items = (data: RollupData | undefined, type: PartyType): BarItem[] =>
     data
@@ -46,45 +47,51 @@ export default function DashboardPage() {
           </ButtonLink>
         }
       />
-      <DateFilter state={dr} />
-      {period.error && <ErrorNotice error={period.error} onRetry={period.reload} />}
+      {lifetime.error && <ErrorNotice error={lifetime.error} onRetry={lifetime.reload} />}
       <StaleStatisticsNotice data={[period.data, lifetime.data]} />
 
-      <div className="figures">
-        <Figure lead label="Total selling (incl. GST)" value={v(t?.buyerGross)} onClick={() => navigate(`/ledger/buyer?${q}`)} />
-        <Figure lead label="Total buying" value={v(t?.seller)} onClick={() => navigate(`/ledger/seller?${q}`)} />
-        <Figure label="Total commission" value={v(t?.commission)} onClick={() => navigate(`/ledger/commission?${q}`)} />
-        <Figure label="Total freight" value={v(t?.freight)} onClick={() => navigate(`/ledger/freight?${q}`)} />
-        <Figure label="Payment agent charges" value={v(t?.paCharge)} onClick={() => navigate(`/ledger/paymentAgent?${q}`)} />
-        <Figure label="Total quantity" value={v(t?.qtyKg, 'qty')} onClick={() => navigate(`/ledger/orders?${q}`)} />
-        <Figure label="Total orders" value={v(t?.orders, 'count')} onClick={() => navigate(`/ledger/orders?${q}`)} />
-      </div>
+      <section aria-labelledby="dash-position">
+        <div className="section-label">
+          <h2 id="dash-position" style={{ font: 'inherit' }}>Financial position</h2>
+          <span>All time, not affected by the date filter</span>
+        </div>
+        <div className="figures position">
+          <Figure tone="in" label="Outstanding receivables" note="All time, from buyers" value={allTime(out?.receivables)} onClick={() => navigate('/reports?type=outstanding')} />
+          <Figure
+            tone="out"
+            label="Outstanding payables"
+            note="Sellers, agents, transporters, payment agent"
+            value={allTime(out?.payables)}
+            onClick={() => navigate('/reports?type=outstanding')}
+          />
+          <Figure tone="out" label="Payment agent outstanding" note="All time, payable" value={allTime(out?.paymentAgent)} onClick={() => navigate('/payment-agent')} />
+        </div>
+      </section>
 
-      <div className="figures compact">
-        <Figure label="Buyer base value" value={v(t?.buyerBase)} />
-        <Figure label="GST" value={v(t?.gst)} />
-        <Figure label="Gross sales" value={v(t?.buyerGross)} />
-        <Figure label="Seller value" value={v(t?.seller)} />
-        <Figure label="Payment agent paid" note="Payments made in period" value={v(t?.paid.PAYMENT_AGENT_SETTLEMENT)} />
-        <Figure
-          label="Payment agent outstanding"
-          note="All time, payable"
-          value={out ? formatINR(out.paymentAgent) : <Skeleton height={22} width={100} />}
-          onClick={() => navigate('/payment-agent')}
-        />
-        <Figure
-          label="Outstanding receivables"
-          note="All time, from buyers"
-          value={out ? formatINR(out.receivables) : <Skeleton height={22} width={100} />}
-          onClick={() => navigate('/reports?type=outstanding')}
-        />
-        <Figure
-          label="Outstanding payables"
-          note="Sellers, agents, transporters, payment agent"
-          value={out ? formatINR(out.payables) : <Skeleton height={22} width={100} />}
-          onClick={() => navigate('/reports?type=outstanding')}
-        />
-      </div>
+      <section aria-labelledby="dash-trading">
+        <div className="section-label">
+          <h2 id="dash-trading" style={{ font: 'inherit' }}>Trading</h2>
+          <span>For the dates selected below</span>
+        </div>
+        <DateFilter state={dr} />
+        {period.error && <div style={{ marginTop: 12 }}><ErrorNotice error={period.error} onRetry={period.reload} /></div>}
+        <div className="figures trading" style={{ marginTop: 12 }}>
+          <Figure lead label="Total selling (incl. GST)" value={v(t?.buyerGross)} onClick={() => navigate(`/ledger/buyer?${q}`)} />
+          <Figure lead label="Total buying" value={v(t?.seller)} onClick={() => navigate(`/ledger/seller?${q}`)} />
+          <Figure label="Total commission" value={v(t?.commission)} onClick={() => navigate(`/ledger/commission?${q}`)} />
+          <Figure label="Total freight" value={v(t?.freight)} onClick={() => navigate(`/ledger/freight?${q}`)} />
+          <Figure label="Payment agent charges" value={v(t?.paCharge)} onClick={() => navigate(`/ledger/paymentAgent?${q}`)} />
+          <Figure label="Total quantity" value={v(t?.qtyKg, 'qty')} onClick={() => navigate(`/ledger/orders?${q}`)} />
+          <Figure label="Total orders" value={v(t?.orders, 'count')} onClick={() => navigate(`/ledger/orders?${q}`)} />
+        </div>
+        <div className="figures compact" style={{ marginTop: 12 }}>
+          <Figure label="Buyer base value" value={v(t?.buyerBase)} />
+          <Figure label="GST" value={v(t?.gst)} />
+          <Figure label="Gross sales" value={v(t?.buyerGross)} />
+          <Figure label="Seller value" value={v(t?.seller)} />
+          <Figure label="Payment agent paid" note="Payments made in period" value={v(t?.paid.PAYMENT_AGENT_SETTLEMENT)} />
+        </div>
+      </section>
 
       <div className="grid-2">
         <Panel title="Selling by buyer" bodyless actions={<ButtonLink size="sm" to={`/ledger/buyer?${q}`}>Ledger</ButtonLink>}>
@@ -116,7 +123,15 @@ export default function DashboardPage() {
             <tbody>
               {period.data &&
                 breakdown(period.data, 'PAYMENT_AGENT').map((r) => (
-                  <tr key={r.id} className="clickable" onClick={() => navigate(`/payment-agents/${r.id}`)}>
+                  <tr
+                    key={r.id}
+                    className="clickable"
+                    tabIndex={0}
+                    onClick={() => navigate(`/payment-agents/${r.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') navigate(`/payment-agents/${r.id}`);
+                    }}
+                  >
                     <td>{nameOf(r.id, 'Unknown')}</td>
                     <td className="r">{formatQty(r.qtyKg)}</td>
                     <td className="r">{formatINR(r.amount)}</td>

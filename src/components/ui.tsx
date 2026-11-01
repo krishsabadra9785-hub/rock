@@ -252,6 +252,19 @@ export function Modal({
     first?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && dismissable) onClose();
+      if (e.key !== 'Tab' || !ref.current) return;
+      // Keep keyboard focus inside the dialog.
+      const items = ref.current.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)');
+      if (items.length === 0) return;
+      const firstItem = items[0]!;
+      const lastItem = items[items.length - 1]!;
+      if (e.shiftKey && document.activeElement === firstItem) {
+        e.preventDefault();
+        lastItem.focus();
+      } else if (!e.shiftKey && document.activeElement === lastItem) {
+        e.preventDefault();
+        firstItem.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -321,9 +334,19 @@ export function ConfirmDialog({
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { value: T; label: string }[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="tabs" role="tablist">
+    <div
+      className="tabs"
+      role="tablist"
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        const step = e.key === 'ArrowRight' ? 1 : -1;
+        const next = (tabs.findIndex((t) => t.value === value) + step + tabs.length) % tabs.length;
+        onChange(tabs[next]!.value);
+        e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+      }}
+    >
       {tabs.map((t) => (
-        <button key={t.value} role="tab" className="tab" aria-selected={t.value === value} onClick={() => onChange(t.value)}>
+        <button key={t.value} type="button" role="tab" className="tab" aria-selected={t.value === value} tabIndex={t.value === value ? 0 : -1} onClick={() => onChange(t.value)}>
           {t.label}
         </button>
       ))}
@@ -331,7 +354,7 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { valu
   );
 }
 
-export function Figure({ label, value, note, onClick, lead }: { label: string; value: ReactNode; note?: ReactNode; onClick?: () => void; lead?: boolean }) {
+export function Figure({ label, value, note, onClick, lead, tone }: { label: string; value: ReactNode; note?: ReactNode; onClick?: () => void; lead?: boolean; tone?: 'in' | 'out' }) {
   const content = (
     <>
       <div className="figure-label">{label}</div>
@@ -339,12 +362,13 @@ export function Figure({ label, value, note, onClick, lead }: { label: string; v
       {note && <div className="figure-note">{note}</div>}
     </>
   );
+  const cls = ['figure', lead ? 'lead' : '', tone ? `tone-${tone}` : ''].filter(Boolean).join(' ');
   return onClick ? (
-    <button type="button" className={`figure ${lead ? 'lead' : ''}`} onClick={onClick}>
+    <button type="button" className={cls} onClick={onClick}>
       {content}
     </button>
   ) : (
-    <div className={`figure ${lead ? 'lead' : ''}`}>{content}</div>
+    <div className={cls}>{content}</div>
   );
 }
 

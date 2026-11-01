@@ -40,7 +40,7 @@ export default function PaymentAgentPage() {
     return (
       <>
         <PageHeader title="Payment agent" />
-        <EmptyState title="No payment agent yet" body="Add the payment agent who receives buyer payments and charges a per-MT fee." action={<ButtonLink to="/payment-agents" variant="primary">Add payment agent</ButtonLink>} />
+        <EmptyState title="No payment agent yet" body="Add the payment agent we pay a commission per MT. Buyers pay us directly." action={<ButtonLink to="/payment-agents" variant="primary">Add payment agent</ButtonLink>} />
       </>
     );
   }
@@ -74,6 +74,7 @@ export default function PaymentAgentPage() {
         <Figure label="Number of payments" value={agentPayments.data ? formatCount(activePayments.length) : sk} />
         <Figure lead label="Outstanding payable" note="All time, what we owe" value={l ? formatINR(l.outstanding) : sk} />
       </div>
+      <p className="small muted">Outstanding payable = all commission accrued − all payments made to the agent. Buyer receipts are separate and never reduce it.</p>
       <Panel bodyless title={`Ledger, ${describeRange(dr.range)}`} actions={<ButtonLink size="sm" to={`/ledger/paymentAgent?party=${selected ?? ''}&from=${dr.range.from ?? ''}&to=${dr.range.to ?? ''}`}>Full ledger & export</ButtonLink>}>
         <DataTable
           rows={pages.rows}

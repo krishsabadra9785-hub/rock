@@ -1,6 +1,6 @@
 import { APP_FILE_PREFIX, APP_NAME } from '../../config/brand';
 import { useState } from 'react';
-import { Badge, Button, Field, Notice, PageHeader, Panel, Select, Tabs, TextInput, AmountInput } from '../../components/ui';
+import { Badge, Button, ConfirmDialog, Field, Notice, PageHeader, Panel, Select, Tabs, TextInput, AmountInput } from '../../components/ui';
 import { PartySelect } from '../../components/PartySelect';
 import { env } from '../../config/env';
 import { financialYearFor, todayISO } from '../../domain/dates';
@@ -286,91 +286,127 @@ function UsersTab() {
   );
 }
 
+type DataWrite = 'repair' | 'upgrade' | 'rebuild';
+
+const DATA_WRITE_CONFIRM: Record<DataWrite, { title: string; body: string; label: string }> = {
+  repair: {
+    title: 'Repair Payment Agent figures?',
+    body: 'This upgrades old orders to the current format, recalculates every summary from the original orders and active payments, then checks the result. It writes to the live database.',
+    label: 'Run repair',
+  },
+  upgrade: {
+    title: 'Upgrade old payment-agent records?',
+    body: "This rewrites the payment-agent line of each old order using the order's own saved rate, with an audit entry. It writes to the live database. Run \"Rebuild statistics\" afterwards.",
+    label: 'Upgrade records',
+  },
+  rebuild: {
+    title: 'Rebuild statistics?',
+    body: 'This replaces the summary documents with figures recalculated from the original records. It reads every order and payment once and writes to the live database.',
+    label: 'Rebuild statistics',
+  },
+};
+
 function DataTab() {
   const { settings } = useSession();
   const { busy, run } = useBusy();
   const [progress, setProgress] = useState('');
+  const [confirming, setConfirming] = useState<DataWrite | null>(null);
+
+  const writes: Record<DataWrite, () => void> = {
+    repair: () =>
+      void run(
+        'repair',
+        async () => {
+          const up = await upgradeLegacyPaymentAgentOrders(setProgress);
+          await rebuildRollups(setProgress);
+          const r = await checkIntegrity(setProgress);
+          const ok = r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0;
+          setProgress(
+            `Upgraded ${up.upgraded.length} old orders. Statistics rebuilt from ${r.orders} orders and ${r.payments} payments. ` +
+              (ok ? 'Check: all figures match.' : `Check: ${r.paidMismatches.length} order paid totals and ${r.rollupMismatches.length} statistics documents still differ.`) +
+              (up.needsReview.length ? ` Needs review (payments to the agent exceed the commission): ${up.needsReview.map((x) => x.orderNumber).join(', ')}.` : ''),
+          );
+        },
+        'Payment Agent figures repaired',
+      ),
+    upgrade: () =>
+      void run('upgrade', async () => {
+        const r = await upgradeLegacyPaymentAgentOrders(setProgress);
+        setProgress(
+          `Checked ${r.scanned} orders: ${r.upgraded.length} upgraded, ${r.alreadyCurrent} already current` +
+            (r.needsReview.length ? `. Needs review (payments to the agent exceed the commission): ${r.needsReview.map((x) => x.orderNumber).join(', ')}` : '.'),
+        );
+      }),
+    rebuild: () => void run('rebuild', async () => { const r = await rebuildRollups(setProgress); setProgress(`Done: ${r.orders} orders, ${r.payments} payments.`); }, 'Statistics rebuilt'),
+  };
+
   return (
     <div className="stack">
-      <Panel title="Backup">
-        <p className="muted" style={{ marginBottom: 12 }}>Downloads every business record (parties, orders, payments, rate history, settings) as a JSON file. Keep it somewhere safe; it contains confidential data.</p>
-        <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`${APP_FILE_PREFIX}-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
-      </Panel>
-      <Panel title="Check figures">
-        <p className="muted" style={{ marginBottom: 12 }}>Recomputes every total from the original orders and active payments and compares it with what is stored. Changes nothing.</p>
-        <Button
-          icon="check"
-          busy={busy === 'check'}
-          onClick={() =>
-            void run('check', async () => {
-              const r = await checkIntegrity(setProgress);
-              setProgress(
-                r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0
-                  ? `All figures match: ${r.orders} orders, ${r.payments} payments checked.`
-                  : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents` +
-                      (r.legacyDocs ? ` (${r.legacyDocs} still in the old Payment Agent format)` : '') +
-                      '. "Repair Payment Agent figures" or "Rebuild statistics" fixes summary figures; contact support for order paid totals.',
-              );
-            })
-          }
-        >
-          Check figures
-        </Button>
-      </Panel>
-      <Panel title="Repair Payment Agent figures">
-        <p className="muted" style={{ marginBottom: 12 }}>
-          Fixes summary figures saved under the old Payment Agent model. It (1) upgrades old orders to the current format, (2) recalculates every summary
-          from the original orders and active payments, then (3) checks the result. No amounts are typed in; everything is recomputed. Safe to run more than once.
-        </p>
-        <Button
-          variant="primary"
-          icon="refresh"
-          busy={busy === 'repair'}
-          onClick={() =>
-            void run(
-              'repair',
-              async () => {
-                const up = await upgradeLegacyPaymentAgentOrders(setProgress);
-                await rebuildRollups(setProgress);
+      {progress && <div role="status"><Notice>{progress}</Notice></div>}
+      <Panel title="Backup and checks" bodyless>
+        <div className="tool-row">
+          <div>
+            <h3>Backup</h3>
+            <p>Downloads every business record (parties, orders, payments, rate history, settings) as a JSON file. Keep it somewhere safe; it contains confidential data.</p>
+          </div>
+          <Button icon="download" busy={busy === 'export'} onClick={() => void run('export', async () => { const b = await exportAllData(setProgress); downloadBlob(`${APP_FILE_PREFIX}-backup-${todayISO()}.json`, b); setProgress(''); }, 'Backup downloaded')}>Download backup</Button>
+        </div>
+        <div className="tool-row">
+          <div>
+            <h3>Check figures</h3>
+            <p>Recomputes every total from the original orders and active payments and compares it with what is stored. Changes nothing.</p>
+          </div>
+          <Button
+            icon="check"
+            busy={busy === 'check'}
+            onClick={() =>
+              void run('check', async () => {
                 const r = await checkIntegrity(setProgress);
-                const ok = r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0;
                 setProgress(
-                  `Upgraded ${up.upgraded.length} old orders. Statistics rebuilt from ${r.orders} orders and ${r.payments} payments. ` +
-                    (ok ? 'Check: all figures match.' : `Check: ${r.paidMismatches.length} order paid totals and ${r.rollupMismatches.length} statistics documents still differ.`) +
-                    (up.needsReview.length ? ` Needs review (payments to the agent exceed the commission): ${up.needsReview.map((x) => x.orderNumber).join(', ')}.` : ''),
+                  r.paidMismatches.length === 0 && r.rollupMismatches.length === 0 && r.legacyDocs === 0
+                    ? `All figures match: ${r.orders} orders, ${r.payments} payments checked.`
+                    : `Differences found: ${r.paidMismatches.length} order paid totals, ${r.rollupMismatches.length} statistics documents` +
+                        (r.legacyDocs ? ` (${r.legacyDocs} still in the old Payment Agent format)` : '') +
+                        '. "Repair Payment Agent figures" or "Rebuild statistics" fixes summary figures; contact support for order paid totals.',
                 );
-              },
-              'Payment Agent figures repaired',
-            )
-          }
-        >
-          Repair Payment Agent figures
-        </Button>
+              })
+            }
+          >
+            Check figures
+          </Button>
+        </div>
       </Panel>
-      <Panel title="Upgrade old payment-agent records">
-        <p className="muted" style={{ marginBottom: 12 }}>
-          Only needed if orders were saved before the payment-agent change (buyer pays us directly; the agent's commission is a payable). It rewrites each such order's
-          payment-agent line to the current format using the order's own saved rate, with an audit entry. Safe to run more than once. Run "Rebuild statistics" afterwards.
-        </p>
-        <Button
-          icon="refresh"
-          busy={busy === 'upgrade'}
-          onClick={() =>
-            void run('upgrade', async () => {
-              const r = await upgradeLegacyPaymentAgentOrders(setProgress);
-              setProgress(
-                `Checked ${r.scanned} orders: ${r.upgraded.length} upgraded, ${r.alreadyCurrent} already current` +
-                  (r.needsReview.length ? `. Needs review (payments to the agent exceed the commission): ${r.needsReview.map((x) => x.orderNumber).join(', ')}` : '.'),
-              );
-            })
-          }
-        >
-          Upgrade old records
-        </Button>
-      </Panel>
-      <Panel title="Rebuild statistics">
-        <p className="muted" style={{ marginBottom: 12 }}>Dashboards use summary documents kept up to date with every order and payment. If figures ever look wrong, rebuild them from the original records. This reads every order and payment once.</p>
-        <Button icon="refresh" busy={busy === 'rebuild'} onClick={() => void run('rebuild', async () => { const r = await rebuildRollups(setProgress); setProgress(`Done: ${r.orders} orders, ${r.payments} payments.`); }, 'Statistics rebuilt')}>Rebuild statistics</Button>
+      <Panel title="Repairs" bodyless>
+        <div className="tool-row" style={{ paddingBottom: 0 }}>
+          <Notice tone="warn" icon="alert">These tools write to the live database. Download a backup first. Each one asks you to confirm before it starts.</Notice>
+        </div>
+        <div className="tool-row" style={{ borderTop: 0 }}>
+          <div>
+            <h3>Repair Payment Agent figures</h3>
+            <p>
+              Fixes summary figures saved under the old Payment Agent model. It (1) upgrades old orders to the current format, (2) recalculates every summary
+              from the original orders and active payments, then (3) checks the result. No amounts are typed in; everything is recomputed. Safe to run more than once.
+            </p>
+          </div>
+          <Button icon="refresh" busy={busy === 'repair'} onClick={() => setConfirming('repair')}>Repair Payment Agent figures</Button>
+        </div>
+        <div className="tool-row">
+          <div>
+            <h3>Upgrade old payment-agent records</h3>
+            <p>
+              Only needed if orders were saved before the payment-agent change (buyer pays us directly; the agent's commission is a payable). It rewrites each such order's
+              payment-agent line to the current format using the order's own saved rate, with an audit entry. Safe to run more than once. Run "Rebuild statistics" afterwards.
+            </p>
+          </div>
+          <Button icon="refresh" busy={busy === 'upgrade'} onClick={() => setConfirming('upgrade')}>Upgrade old records</Button>
+        </div>
+        <div className="tool-row">
+          <div>
+            <h3>Rebuild statistics</h3>
+            <p>Dashboards use summary documents kept up to date with every order and payment. If figures ever look wrong, rebuild them from the original records. This reads every order and payment once.</p>
+          </div>
+          <Button icon="refresh" busy={busy === 'rebuild'} onClick={() => setConfirming('rebuild')}>Rebuild statistics</Button>
+        </div>
       </Panel>
       {env.enableDemoTools && (
         <Panel title="Demo data">
@@ -380,7 +416,18 @@ function DataTab() {
           </div>
         </Panel>
       )}
-      {progress && <Notice>{progress}</Notice>}
+      {confirming && (
+        <ConfirmDialog
+          title={DATA_WRITE_CONFIRM[confirming].title}
+          body={DATA_WRITE_CONFIRM[confirming].body}
+          confirmLabel={DATA_WRITE_CONFIRM[confirming].label}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            writes[confirming]();
+            setConfirming(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -67,10 +67,10 @@ export default function PartyListPage({ type }: { type: PartyType }) {
         actions={can(profile?.role, 'party.write') && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add {labels.singular.toLowerCase()}</Button>}
       />
       <div className="filters no-print">
-        <Field label="Search" htmlFor="pl-q">
+        <Field className="grow" label="Search" htmlFor="pl-q">
           <TextInput id="pl-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, ID, phone, GSTIN" />
         </Field>
-        <label className="check" style={{ paddingBottom: 10 }}>
+        <label className="check">
           <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} /> Show inactive
         </label>
       </div>

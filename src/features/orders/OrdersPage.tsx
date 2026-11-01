@@ -79,7 +79,7 @@ export default function OrdersPage() {
       <PageHeader title="Orders" actions={<ButtonLink to="/orders/new" variant="primary" icon="plus">Create order</ButtonLink>} />
       <DateFilter state={dr} />
       <div className="filters no-print">
-        <Field label="Search" htmlFor="o-q" hint="Order no., vehicle, driver, phone, receipt, party, destination">
+        <Field className="grow" label="Search" htmlFor="o-q" hint="Order no., vehicle, driver, phone, receipt, party, destination">
           <TextInput id="o-q" type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. MH12AB1234" />
         </Field>
         <Field label="Party type" htmlFor="o-pt">

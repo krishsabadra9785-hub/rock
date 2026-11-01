@@ -482,6 +482,7 @@ export default function CreateOrderPage() {
             {formatQty(qtyKg)} dispatched {formatDate(form.dispatchDate)}
             {form.vehicleNumber && ` on ${normalizeVehicleNumber(form.vehicleNumber)}`}. Rates are pre-filled from each party's saved default.
           </Notice>
+          <div className="order-compose">
           <Panel bodyless>
             <div className="party-block">
               <h3>Buyer</h3>
@@ -541,6 +542,32 @@ export default function CreateOrderPage() {
               </Field>
             </div>
           </Panel>
+          <Panel title="Order summary" className="order-summary">
+            <dl className="kv" aria-live="polite">
+              <dt>Quantity</dt>
+              <dd className="strong">{formatQty(qtyKg)}</dd>
+              {fin ? (
+                <>
+                  <dt>Buyer base</dt>
+                  <dd>{formatINR(fin.buyer.baseAmount)}</dd>
+                  <dt>GST</dt>
+                  <dd>{formatINR(fin.buyer.gstAmount)}</dd>
+                  <dt className="sep">Buyer total</dt>
+                  <dd className="sep strong">{formatINR(fin.buyer.grossAmount)}</dd>
+                  <dt>Seller</dt>
+                  <dd>{formatINR(fin.seller.amount)}</dd>
+                  <dt>Commission</dt>
+                  <dd>{agentId ? formatINR(fin.commission.amount) : 'None'}</dd>
+                  <dt>Freight</dt>
+                  <dd>{transporterId ? formatINR(fin.freight.amount) : 'None'}</dd>
+                  <dt>Payment agent</dt>
+                  <dd>{paId ? formatINR(fin.paymentAgent.amount) : 'None'}</dd>
+                </>
+              ) : null}
+            </dl>
+            {!fin && <p className="small muted" style={{ marginTop: 10 }}>Amounts appear once every rate is filled in.</p>}
+          </Panel>
+          </div>
           <div className="wizard-foot">
             <Button onClick={() => setStep('verify')}>Back</Button>
             <Button variant="primary" onClick={() => validateParties() && setStep('review')}>

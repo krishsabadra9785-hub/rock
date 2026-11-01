@@ -17,7 +17,7 @@ export function BarList({ items, onSelect, emptyText = 'Nothing in this period' 
     <div className="bars">
       {items.map((i) => (
         <button key={i.id} type="button" className="bar-row" onClick={() => onSelect?.(i.id)}>
-          <span className="bar-name">
+          <span className="bar-name" title={i.name}>
             {i.name}
             <small>{i.sub ?? formatQty(i.qtyKg)}</small>
           </span>

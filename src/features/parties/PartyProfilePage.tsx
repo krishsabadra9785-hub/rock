@@ -209,27 +209,29 @@ export default function PartyProfilePage({ type }: { type: PartyType }) {
       )}
 
       {tab === 'rates' && (
-        <Panel bodyless title="Rate history">
+        <Panel bodyless title="Rate history" actions={<span className="small muted">Changes apply to future orders. Past orders keep their own rates.</span>}>
           {history.loading && !history.data ? (
             <SkeletonRows rows={3} />
           ) : history.error ? (
-            <div style={{ padding: 18 }}><ErrorNotice error={history.error} onRetry={history.reload} /></div>
+            <div style={{ padding: 16 }}><ErrorNotice error={history.error} onRetry={history.reload} /></div>
           ) : (history.data?.length ?? 0) === 0 ? (
-            <p className="muted small" style={{ padding: 18 }}>No rate changes recorded yet.</p>
+            <p className="muted small" style={{ padding: 16 }}>No rate changes recorded yet.</p>
           ) : (
             <div className="table-wrap">
               <table className="data">
                 <thead><tr><th>Changed</th><th>Rate</th><th className="r">From</th><th className="r">To</th><th>Effective</th><th>Source</th></tr></thead>
                 <tbody>
-                  {history.data!.map((h) => {
+                  {history.data!.map((h, i, all) => {
                     const pct = RATE_META[h.rateType].unit === 'BASIS_POINTS';
+                    // Newest entry for this rate, still matching the party's saved default.
+                    const current = !all.slice(0, i).some((x) => x.rateType === h.rateType) && h.newRate === party.rates[h.rateType];
                     const f = (v: number | null) => (pct ? formatPercent(v) : formatRate(v));
                     return (
                       <tr key={h.id}>
                         <td className="nowrap">{formatDateTime(h.createdAt)}</td>
                         <td>{RATE_META[h.rateType].label}</td>
                         <td className="r">{f(h.oldRate)}</td>
-                        <td className="r"><strong>{f(h.newRate)}</strong></td>
+                        <td className="r"><strong>{f(h.newRate)}</strong>{current && <> <Badge tone="ok">Current</Badge></>}</td>
                         <td>{formatDate(h.effectiveFrom)}</td>
                         <td>{h.sourceOrderId ? <a href={`#/orders/${h.sourceOrderId}`}>{h.sourceOrderNumber}</a> : h.reason || 'Profile change'}</td>
                       </tr>

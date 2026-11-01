@@ -50,11 +50,12 @@ export function Icon({ name, size = 18, ...rest }: { name: IconName; size?: numb
   );
 }
 
-export function BrandMark({ size = 28 }: { size?: number }) {
+/** `tone="light"` is for white surfaces, where the mark's white ridge line would vanish. */
+export function BrandMark({ size = 28, tone = 'dark' }: { size?: number; tone?: 'dark' | 'light' }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" className="brand-mark">
-      <path d="M4 26 12 8l6 10 3-5 7 13Z" fill="#D9A21B" />
-      <path d="M4 26 12 8l6 10" fill="none" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M4 26 12 8l6 10 3-5 7 13Z" fill="var(--haul)" />
+      <path d="M4 26 12 8l6 10" fill="none" stroke={tone === 'light' ? 'var(--ink)' : '#fff'} strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 }

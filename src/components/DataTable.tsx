@@ -56,6 +56,7 @@ export function DataTable<T>({
       return (x < y ? -1 : x > y ? 1 : 0) * sort.dir;
     });
   }, [rows, columns, sort]);
+  const toggleSort = (id: string) => setSort((s) => (s?.id === id ? { id, dir: s.dir === 1 ? -1 : 1 } : { id, dir: -1 }));
 
   if (error && rows.length === 0) return <div style={{ padding: 18 }}><ErrorNotice error={error} onRetry={onRetry} /></div>;
   if (loading && rows.length === 0) return <SkeletonRows rows={6} />;
@@ -74,7 +75,18 @@ export function DataTable<T>({
                   key={c.id}
                   className={`${c.align === 'right' ? 'r' : ''} ${c.sortValue ? 'sortable' : ''}`}
                   aria-sort={sort?.id === c.id ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}
-                  onClick={c.sortValue ? () => setSort((s) => (s?.id === c.id ? { id: c.id, dir: s.dir === 1 ? -1 : 1 } : { id: c.id, dir: -1 })) : undefined}
+                  tabIndex={c.sortValue ? 0 : undefined}
+                  onClick={c.sortValue ? () => toggleSort(c.id) : undefined}
+                  onKeyDown={
+                    c.sortValue
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleSort(c.id);
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {c.header}
                   {sort?.id === c.id ? (sort.dir === 1 ? ' ↑' : ' ↓') : ''}
@@ -87,13 +99,22 @@ export function DataTable<T>({
               <tr
                 key={rowKey(r)}
                 className={`${onRowClick ? 'clickable' : ''} ${rowClassName?.(r) ?? ''}`}
+                tabIndex={onRowClick ? 0 : undefined}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key === 'Enter' && e.target === e.currentTarget) onRowClick(r);
+                      }
+                    : undefined
+                }
               >
                 {columns.map((c) => {
                   const href = c.link?.(r);
                   const content = c.status ? <StatusBadge status={c.status(r)} /> : c.text(r);
+                  const isText = c.align !== 'right' && !c.status;
                   return (
-                    <td key={c.id} className={c.align === 'right' ? 'r' : ''}>
+                    <td key={c.id} className={c.align === 'right' ? 'r' : isText ? 'cell-text' : ''} title={isText ? c.text(r) : undefined}>
                       {href ? (
                         <Link to={href} onClick={(e) => e.stopPropagation()}>
                           {content}
